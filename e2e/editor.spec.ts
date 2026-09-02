@@ -87,6 +87,9 @@ const addElement = async (name: RegExp): Promise<void> => {
   await window.getByRole('menuitem', { name }).click();
 };
 
+const pdfPageCount = (path: string): number =>
+  readFileSync(path).toString('latin1').match(/\/Type\s*\/Page\b/g)?.length ?? 0;
+
 test('shows the MarkD project screen and preserves history across core actions', async () => {
   await expect.poll(() => electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible())).toBe(false);
   await expect(window).toHaveTitle(/MarkD/);
@@ -196,6 +199,7 @@ test('creates, saves and exports a proposal without image/table overlap', async 
   await expect.poll(() => existsSync(pdfPath)).toBe(true);
   await expect.poll(() => statSync(pdfPath).size).toBeGreaterThan(1_000);
   await expect(window.getByText(/PDF готов:/)).toBeVisible();
+  expect(pdfPageCount(pdfPath)).toBe(savedProject.pages.length);
 
   await window.screenshot({ path: screenshotPaths.editor, fullPage: false });
   expect(runtimeErrors).toEqual([]);
