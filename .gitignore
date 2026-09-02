@@ -1,0 +1,16 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+
+node_modules/
+dist/
+dist-package/
+output/
+test-results/
+coverage/
+playwright-report/
+
+*.log
+*.tmp
+.codebase-memory/

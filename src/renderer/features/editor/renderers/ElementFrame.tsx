@@ -1,0 +1,71 @@
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import type { KpRect, RenderMode } from '@/renderer/domain/model';
+import { EditorOverlay } from './EditorOverlay';
+
+type ElementFrameProps = {
+  children: ReactNode;
+  chrome?: ReactNode;
+  className: string;
+  mode: RenderMode;
+  rect: KpRect;
+  scale: number;
+  selected: boolean;
+  testId: string;
+  zIndex: number;
+  moveLabel: string;
+  resizeLabel?: string;
+  moveTestId?: string;
+  hasOverflow?: boolean;
+  resizable?: boolean;
+  onSelect: () => void;
+  onMoveStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+};
+
+export const ElementFrame = ({
+  children,
+  chrome,
+  className,
+  mode,
+  rect,
+  scale,
+  selected,
+  testId,
+  zIndex,
+  moveLabel,
+  resizeLabel,
+  moveTestId,
+  hasOverflow,
+  resizable = true,
+  onSelect,
+  onMoveStart,
+  onResizeStart
+}: ElementFrameProps) => (
+  <div
+    className={`canvas-element ${className} ${mode === 'edit' && selected ? 'selected' : ''}`}
+    data-testid={testId}
+    data-render-mode={mode}
+    style={{
+      left: `${rect.x * scale}px`,
+      top: `${rect.y * scale}px`,
+      width: `${rect.width * scale}px`,
+      height: `${rect.height * scale}px`,
+      zIndex: zIndex + 2
+    } as CSSProperties}
+    onClick={mode === 'edit' ? onSelect : undefined}
+  >
+    {children}
+    <EditorOverlay
+      mode={mode}
+      selected={selected}
+      moveLabel={moveLabel}
+      resizeLabel={resizeLabel}
+      moveTestId={moveTestId}
+      hasOverflow={hasOverflow}
+      onMoveStart={onMoveStart}
+      onResizeStart={resizable ? onResizeStart : undefined}
+    >
+      {chrome}
+    </EditorOverlay>
+  </div>
+);

@@ -1,0 +1,123 @@
+{
+  "name": "markd",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main/main/main.js",
+  "description": "MarkD — редактор переносимых документов для macOS",
+  "scripts": {
+    "postinstall": "electron-builder install-app-deps",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "test:e2e": "npm run build && playwright test",
+    "build:renderer": "vite build",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/preload/preload.cjs",
+    "build": "npm run build:main && npm run build:preload && npm run build:renderer",
+    "dev": "npm run build:main && npm run build:preload && concurrently \"vite --host 127.0.0.1 --port 40173 --strictPort\" \"cross-env NODE_ENV=development VITE_DEV_SERVER_URL=http://127.0.0.1:40173 node scripts/run-electron.mjs\"",
+    "package:mac": "npm run build && node scripts/package-mac.mjs && npm run smoke:app",
+    "package:win": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win nsis --x64 --publish never",
+    "smoke:app": "node scripts/smoke-packaged-app.mjs"
+  },
+  "keywords": [
+    "electron",
+    "react",
+    "kp",
+    "editor",
+    "pdf"
+  ],
+  "author": "Codex",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "immer": "^10.1.1",
+    "lucide-react": "^0.542.0",
+    "motion": "^10.18.0",
+    "nanoid": "^5.0.9",
+    "pdfjs-dist": "^4.7.76",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-moveable": "^0.56.0",
+    "zod": "^3.24.2",
+    "zundo": "^2.0.6",
+    "zustand": "^5.0.4"
+  },
+  "devDependencies": {
+    "@electron/fuses": "^1.8.0",
+    "@eslint/js": "^9.12.0",
+    "@playwright/experimental-ct-react": "^1.48.0",
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.4",
+    "@typescript-eslint/eslint-plugin": "^8.8.0",
+    "@typescript-eslint/parser": "^8.8.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "@vitest/ui": "^2.1.8",
+    "concurrently": "^9.2.0",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.0",
+    "electron-builder": "^24.13.3",
+    "eslint": "^9.14.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.16",
+    "playwright": "^1.48.0",
+    "sass": "^1.79.4",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.8"
+  },
+  "build": {
+    "appId": "com.markd.desktop",
+    "productName": "MarkD",
+    "asar": true,
+    "files": [
+      "dist/main/**/*",
+      "dist/preload/**/*",
+      "dist/renderer/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist-package"
+    },
+    "mac": {
+      "target": "dir",
+      "hardenedRuntime": false,
+      "identity": "-"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "MarkD-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MarkD"
+    },
+    "fileAssociations": [
+      {
+        "ext": "markd",
+        "name": "Проект MarkD",
+        "description": "Переносимый проект MarkD",
+        "role": "Editor"
+      }
+    ],
+    "publish": {
+      "provider": "generic",
+      "url": ""
+    },
+    "extraMetadata": {
+      "main": "dist/main/main/main.js"
+    }
+  }
+}

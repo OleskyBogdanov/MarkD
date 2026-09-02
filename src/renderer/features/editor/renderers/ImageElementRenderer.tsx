@@ -1,0 +1,49 @@
+import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { KpAsset, KpImageElement, KpRect, RenderMode } from '@/renderer/domain/model';
+import { ElementFrame } from './ElementFrame';
+
+type ImageElementRendererProps = {
+  asset?: KpAsset;
+  element: KpImageElement;
+  mode: RenderMode;
+  rect: KpRect;
+  scale: number;
+  selected: boolean;
+  onSelect: () => void;
+  onMoveStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+};
+
+export const ImageElementRenderer = ({
+  asset,
+  element,
+  mode,
+  rect,
+  scale,
+  selected,
+  onSelect,
+  onMoveStart,
+  onResizeStart
+}: ImageElementRendererProps) => (
+  <ElementFrame
+    className="image-element"
+    mode={mode}
+    rect={rect}
+    scale={scale}
+    selected={selected}
+    testId="image-element"
+    zIndex={element.zIndex}
+    moveLabel="Переместить изображение"
+    resizeLabel="Изменить размер изображения"
+    moveTestId="image-drag-handle"
+    onSelect={onSelect}
+    onMoveStart={onMoveStart}
+    onResizeStart={onResizeStart}
+  >
+    {asset?.dataUrl ? (
+      <img src={asset.dataUrl} alt={asset.name ? `Изображение: ${asset.name}` : 'Изображение коммерческого предложения'} decoding="sync" />
+    ) : (
+      <span className="missing-image">Изображение недоступно</span>
+    )}
+  </ElementFrame>
+);
