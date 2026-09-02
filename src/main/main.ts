@@ -4,7 +4,8 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSecureWindow } from './windows/createWindow.js';
 import { IPC_CHANNEL } from '../shared/ipc-channels.js';
-import { registerIpcHandlers } from './ipc/ipcHandlers.js';
+import { openProjectFromPath, registerIpcHandlers } from './ipc/ipcHandlers.js';
+import { isProjectFile } from './storage/projectFileService.js';
 import { ensureMarkdDirectories } from './storage/markdPaths.js';
 import { getLogsDirectory, initializeLogger, writeLog } from './logging/appLogger.js';
 import { installProcessLogging, installWindowLogging } from './logging/installCrashHandlers.js';
@@ -17,6 +18,7 @@ const scheme = 'app';
 const host = 'local';
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
 const isHeadlessTest = process.env['MARKD_E2E_HEADLESS'] === '1';
+const pendingProjectPaths: string[] = [];
 app.setName('MarkD');
 app.setPath('userData', process.env['MARKD_USER_DATA_DIR'] ?? join(app.getPath('appData'), 'MarkD'));
 const markdPaths = ensureMarkdDirectories();
@@ -61,6 +63,10 @@ function getMime(ext?: string): string {
       return 'image/jpeg';
     case 'webp':
       return 'image/webp';
+    case 'ttf':
+      return 'font/ttf';
+    case 'woff2':
+      return 'font/woff2';
     default:
       return 'text/plain';
   }
@@ -197,6 +203,8 @@ function createWindow(): BrowserWindow {
     }
   });
 
+  window.webContents.on('did-stop-loading', () => flushPendingProjectPaths(window));
+
   void window.loadURL(getRendererUrl()).catch((error: unknown) => {
     writeLog('error', 'renderer.load-url-failed', error, { url: getRendererUrl() });
     console.error('Не удалось загрузить интерфейс редактора:', error);
@@ -204,7 +212,63 @@ function createWindow(): BrowserWindow {
   return window;
 }
 
-app.whenReady().then(() => {
+const findProjectPath = (args: readonly string[], workingDirectory = process.cwd()): string | null => {
+  const candidate = args.find((argument) => !argument.startsWith('-') && isProjectFile(argument));
+  if (!candidate) return null;
+  return isAbsolute(candidate) ? candidate : resolve(workingDirectory, candidate);
+};
+
+const enqueueProjectPath = (filePath: string): void => {
+  const resolvedPath = isAbsolute(filePath) ? filePath : resolve(filePath);
+  if (!isProjectFile(resolvedPath) || pendingProjectPaths.includes(resolvedPath)) return;
+  pendingProjectPaths.push(resolvedPath);
+};
+
+function flushPendingProjectPaths(window = BrowserWindow.getAllWindows()[0]): void {
+  if (!window || window.isDestroyed() || window.webContents.isLoading()) {
+    writeLog('info', 'project.open-from-os-deferred', undefined, {
+      hasWindow: Boolean(window),
+      isLoading: window && !window.isDestroyed() ? window.webContents.isLoading() : undefined,
+      pendingCount: pendingProjectPaths.length
+    });
+    return;
+  }
+  while (pendingProjectPaths.length > 0) {
+    const filePath = pendingProjectPaths.shift();
+    if (!filePath) continue;
+    try {
+      window.webContents.send(IPC_CHANNEL.OPEN_PROJECT_FROM_OS, openProjectFromPath(filePath));
+      if (window.isMinimized()) window.restore();
+      window.show();
+      window.focus();
+    } catch (error) {
+      writeLog('error', 'project.open-from-os-failed', error, { path: filePath });
+    }
+  }
+}
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  const initialProjectPath = findProjectPath(process.argv);
+  if (initialProjectPath) enqueueProjectPath(initialProjectPath);
+
+  app.on('open-file', (event, filePath) => {
+    event.preventDefault();
+    enqueueProjectPath(filePath);
+    flushPendingProjectPaths();
+  });
+
+  app.on('second-instance', (_event, commandLine, workingDirectory) => {
+    const filePath = findProjectPath(commandLine, workingDirectory);
+    if (filePath) enqueueProjectPath(filePath);
+    flushPendingProjectPaths();
+  });
+}
+
+if (hasSingleInstanceLock) app.whenReady().then(() => {
   if (isHeadlessTest && process.platform === 'darwin') app.dock?.hide();
   if (!isDev) {
     setupProtocol();

@@ -63,6 +63,7 @@ export const App = () => {
   const [renderMode, setRenderMode] = useState<RenderMode>('edit');
   const [inspectorWidth, setInspectorWidth] = useState(340);
   const renderModeBeforePrint = useRef<Exclude<RenderMode, 'print'>>('edit');
+  const saveInProgressRef = useRef(false);
   const isPreview = renderMode === 'preview';
   const isBusy = operation.kind === 'saving' || operation.kind === 'exporting';
 
@@ -141,6 +142,8 @@ export const App = () => {
   }, [confirmDiscardChanges, loadRecentProjects, select]);
 
   const handleSave = useCallback(async (): Promise<void> => {
+    if (saveInProgressRef.current) return;
+    saveInProgressRef.current = true;
     setOperation({ kind: 'saving', message: 'Сохраняю документ…' });
     try {
       const snapshot = serializeForSave(project);
@@ -159,8 +162,29 @@ export const App = () => {
       void loadRecentProjects();
     } catch {
       setOperation({ kind: 'error', message: 'Не удалось сохранить документ. Проверьте доступ к папке.' });
+    } finally {
+      saveInProgressRef.current = false;
     }
   }, [loadRecentProjects, project, projectPath, setDirty]);
+
+  const handleSaveTemplate = useCallback(async (): Promise<void> => {
+    if (saveInProgressRef.current) return;
+    saveInProgressRef.current = true;
+    setOperation({ kind: 'saving', message: 'Сохраняю шаблон…' });
+    try {
+      const path = await window.desktop.saveTemplate(serializeForSave(project));
+      if (!path) {
+        setOperation({ kind: 'idle', message: '' });
+        return;
+      }
+
+      setOperation({ kind: 'success', message: `Шаблон сохранён: ${fileNameFromPath(path)}` });
+    } catch {
+      setOperation({ kind: 'error', message: 'Не удалось сохранить шаблон. Проверьте доступ к папке.' });
+    } finally {
+      saveInProgressRef.current = false;
+    }
+  }, [project]);
 
   const handleExport = useCallback(async (): Promise<void> => {
     setOperation({ kind: 'exporting', message: 'Готовлю PDF…' });
@@ -240,6 +264,26 @@ export const App = () => {
     return unsubscribe;
   }, [deleteSelected, handleCreateProject, handleExport, handleOpenProject, handleSave, redo, undo]);
 
+  useEffect(() => {
+    if (workspace !== 'editor') return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return;
+      event.preventDefault();
+      if (!event.repeat) void handleSave();
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [handleSave, workspace]);
+
+  useEffect(() => window.desktop.onExternalProjectOpen((payload) => {
+    if (!confirmDiscardChanges()) return;
+    try {
+      applyOpenedProject(payload);
+    } catch {
+      setOperation({ kind: 'error', message: 'Не удалось открыть документ, переданный системой.' });
+    }
+  }), [applyOpenedProject, confirmDiscardChanges]);
+
   const onAddText = useCallback((): void => {
     const pageId = project.pages[0]?.id;
     if (pageId) addText(pageId);
@@ -307,7 +351,8 @@ export const App = () => {
           onAddTable={() => addToFirstPage(addTable)}
           onAddImage={() => void onAddImage()}
           onAddShape={(shape) => addToFirstPage((pageId) => addShape(pageId, shape))}
-          onSave={() => void handleSave()}
+          onSaveFile={() => void handleSave()}
+          onSaveTemplate={() => void handleSaveTemplate()}
           onOpen={() => void handleOpenProject()}
           selected={selected}
           onUndo={undo}

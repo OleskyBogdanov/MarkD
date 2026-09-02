@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
 import { AlignCenter, AlignLeft, AlignRight, Bold, ChevronDown, ChevronUp, Italic, Plus, Trash2, X } from 'lucide-react';
-import { ICON_NAMES, type IconName, type KpRect, type TextAlign, type VerticalAlign } from '@/renderer/domain/model';
-import { ICON_LABELS } from '@/renderer/domain/iconRegistry';
+import { type IconName, type KpRect, type TextAlign, type VerticalAlign } from '@/renderer/domain/model';
+import { DOCUMENT_ICON_LICENSE_URL, ICON_GROUPS, ICON_LABELS } from '@/renderer/domain/iconRegistry';
+import { fontSupportsItalic } from '@/renderer/domain/fontRegistry';
 import { useEditorStore } from '@/renderer/store/useEditorStore';
 import { ColorControl } from '@/renderer/components/ui/ColorControl';
 import { BufferedTextarea } from '@/renderer/components/ui/BufferedTextControl';
 import { TextPlacementControl } from '@/renderer/components/ui/TextPlacementControl';
+import { FontSelect } from '@/renderer/components/ui/FontSelect';
 
 type GeometryFieldsProps = {
   rect: KpRect;
@@ -194,15 +196,13 @@ export const Inspector = () => {
 
           <label>
             Гарнитура
-            <select
-              value={element.style.fontFamily}
-              onChange={(event) => updateTextStyle(pageId, element.id, { fontFamily: event.currentTarget.value })}
-            >
-              <option value="Avenir Next, -apple-system, BlinkMacSystemFont, sans-serif">Avenir Next</option>
-              <option value="Arial, -apple-system, sans-serif">Arial</option>
-              <option value="Georgia, Times New Roman, serif">Georgia</option>
-              <option value="Menlo, Monaco, monospace">Menlo</option>
-            </select>
+            <FontSelect
+              value={element.style.fontId}
+              onChange={(fontId) => updateTextStyle(pageId, element.id, {
+                fontId,
+                italic: fontSupportsItalic(fontId) ? element.style.italic : false
+              })}
+            />
           </label>
 
           <div className="type-controls">
@@ -234,7 +234,8 @@ export const Inspector = () => {
                 className={element.style.italic ? 'active' : ''}
                 aria-label="Курсив"
                 aria-pressed={element.style.italic}
-                title="Курсив"
+                disabled={!fontSupportsItalic(element.style.fontId)}
+                title={fontSupportsItalic(element.style.fontId) ? 'Курсив' : 'У этой гарнитуры нет курсива'}
                 onClick={() => updateTextStyle(pageId, element.id, { italic: !element.style.italic })}
               >
                 <Italic size={15} />
@@ -303,14 +304,23 @@ export const Inspector = () => {
             <input disabled={!element.showPlaceholder} value={element.placeholder} onChange={(event) => updateTextField(pageId, element.id, { placeholder: event.currentTarget.value })} />
           </label>
           <label>
-            Иконка Lucide
+            Иконка
             <select
               value={element.iconName ?? ''}
               onChange={(event) => updateTextField(pageId, element.id, { iconName: (event.currentTarget.value || undefined) as IconName | undefined })}
             >
               <option value="">Без иконки</option>
-              {ICON_NAMES.map((iconName) => <option key={iconName} value={iconName}>{ICON_LABELS[iconName]}</option>)}
+              {ICON_GROUPS.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.icons.map((iconName) => <option key={iconName} value={iconName}>{ICON_LABELS[iconName]}</option>)}
+                </optgroup>
+              ))}
             </select>
+          </label>
+          <span className="control-attribution" data-license-url={DOCUMENT_ICON_LICENSE_URL}>Lucide · ISC/MIT</span>
+          <label>
+            Гарнитура
+            <FontSelect value={element.style.fontId} onChange={(fontId) => updateTextField(pageId, element.id, { style: { fontId } })} />
           </label>
           <label>
             Размер текста, px
@@ -390,6 +400,10 @@ export const Inspector = () => {
               <option value="">Не выбран</option>
               {element.options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
             </select>
+          </label>
+          <label>
+            Гарнитура
+            <FontSelect value={element.style.fontId} onChange={(fontId) => updateSelectField(pageId, element.id, { style: { fontId } })} />
           </label>
         </div>
 
@@ -540,15 +554,15 @@ export const Inspector = () => {
               </label>
               <label>
                 Гарнитура
-                <select
-                  value={element.textStyle.fontFamily}
-                  onChange={(event) => updateShape(pageId, element.id, { textStyle: { fontFamily: event.currentTarget.value } })}
-                >
-                  <option value="Avenir Next, -apple-system, BlinkMacSystemFont, sans-serif">Avenir Next</option>
-                  <option value="Arial, -apple-system, sans-serif">Arial</option>
-                  <option value="Georgia, Times New Roman, serif">Georgia</option>
-                  <option value="Menlo, Monaco, monospace">Menlo</option>
-                </select>
+                <FontSelect
+                  value={element.textStyle.fontId}
+                  onChange={(fontId) => updateShape(pageId, element.id, {
+                    textStyle: {
+                      fontId,
+                      italic: fontSupportsItalic(fontId) ? element.textStyle.italic : false
+                    }
+                  })}
+                />
               </label>
               <div className="type-controls">
                 <label>
@@ -579,7 +593,8 @@ export const Inspector = () => {
                     className={element.textStyle.italic ? 'active' : ''}
                     aria-label="Курсив"
                     aria-pressed={element.textStyle.italic}
-                    title="Курсив"
+                    disabled={!fontSupportsItalic(element.textStyle.fontId)}
+                    title={fontSupportsItalic(element.textStyle.fontId) ? 'Курсив' : 'У этой гарнитуры нет курсива'}
                     onClick={() => updateShape(pageId, element.id, { textStyle: { italic: !element.textStyle.italic } })}
                   >
                     <Italic size={15} aria-hidden="true" />
@@ -644,6 +659,12 @@ export const Inspector = () => {
         </div>
 
         <div className="inspector-section-label">Текст и ячейки</div>
+        <div className="inspector-block">
+          <label>
+            Гарнитура
+            <FontSelect value={element.style.fontId} onChange={(fontId) => updateTableStyle(pageId, element.id, { fontId })} />
+          </label>
+        </div>
         <div className="table-settings-grid">
           <label>
             Размер текста, px

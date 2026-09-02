@@ -177,7 +177,7 @@ const makeDefaultTextElement = (page: KpPage, layerId: string) => {
   rect: centeredRect(page, 178, height),
   text: 'Новый текст',
   style: {
-    fontFamily: 'Avenir Next, -apple-system, BlinkMacSystemFont, sans-serif',
+    fontId: 'inter',
     fontSize: 14,
     bold: false,
     italic: false,
@@ -199,7 +199,7 @@ const makeDefaultPage = (): KpPage => ({
 });
 
 const defaultFieldStyle = {
-  fontFamily: 'Avenir Next, -apple-system, BlinkMacSystemFont, sans-serif',
+  fontId: 'inter' as const,
   fontSize: 12,
   textColor: '#23241f',
   labelColor: '#5e6159',
@@ -245,6 +245,7 @@ const makeDefaultSelectFieldElement = (page: KpPage, layerId: string): KpSelectF
 });
 
 const defaultTableStyle: KpTableStyle = {
+  fontId: 'inter',
   textColor: '#23241f',
   backgroundColor: '#fffefa',
   headerTextColor: '#ffffff',
@@ -305,7 +306,8 @@ const makeDefaultProject = (): KpProject => {
     title: 'Новый КП',
     createdBy: 'MarkD',
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
+    renderProfileVersion: 1
   },
   orientation: 'portrait',
   layers: [{ id: DEFAULT_LAYER_ID, name: 'Основной', order: 0, visible: true, locked: false }],
@@ -319,7 +321,7 @@ const makeDefaultProject = (): KpProject => {
           rect: { x: 16, y: 12, width: 180, height: 20 },
           text: 'Коммерческое предложение',
           style: {
-            fontFamily: 'Avenir Next, -apple-system, BlinkMacSystemFont, sans-serif',
+            fontId: 'golos-text',
             fontSize: 20,
             bold: true,
             italic: false,
@@ -627,7 +629,7 @@ export const useEditorStore = create<EditorState>((set) => ({
           },
           text: '',
           textStyle: {
-            fontFamily: 'Avenir Next, -apple-system, BlinkMacSystemFont, sans-serif',
+            fontId: 'inter',
             fontSize: 14,
             bold: false,
             italic: false,

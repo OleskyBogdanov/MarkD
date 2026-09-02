@@ -9,6 +9,7 @@ declare global {
       openRecentProject: (projectId: string) => Promise<{ path: string; snapshot: string }>;
       saveProject: (snapshot: string, path?: string | null) => Promise<string | null>;
       saveProjectAs: (snapshot: string) => Promise<string | null>;
+      saveTemplate: (snapshot: string) => Promise<string | null>;
       importImage: () => Promise<{
         id: string;
         name: string;
@@ -33,6 +34,7 @@ declare global {
         stack?: string;
       }) => void;
       onMenuCommand: (handler: (payload: DesktopMenuCommand) => void) => () => void;
+      onExternalProjectOpen: (handler: (payload: { path: string; snapshot: string }) => void) => () => void;
     };
   }
 }

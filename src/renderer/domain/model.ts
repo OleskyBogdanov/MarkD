@@ -1,10 +1,12 @@
 export {
+  FONT_IDS,
   ICON_NAMES,
   DEFAULT_LAYER_ID,
   assetSchema,
   colorSchema,
   elementSchema,
   fieldStyleSchema,
+  fontIdSchema,
   iconNameSchema,
   imageElementSchema,
   migrateProject,
@@ -31,6 +33,7 @@ export {
 } from '@/shared/projectSchema';
 
 export type {
+  FontId,
   IconName,
   KpAsset,
   KpElement,

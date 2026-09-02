@@ -142,7 +142,7 @@ describe('editor store: новые элементы и история', () => {
       text: 'Важное условие',
       style: { cornerRadius: 18 },
       textStyle: {
-        fontFamily: 'Georgia, Times New Roman, serif',
+        fontId: 'pt-serif',
         fontSize: 22,
         bold: true,
         italic: true,
@@ -154,7 +154,7 @@ describe('editor store: новые элементы и история', () => {
     expect(useEditorStore.getState().project.pages[0].elements.at(-1)).toMatchObject({
       text: 'Важное условие',
       style: { cornerRadius: 18 },
-      textStyle: { fontFamily: 'Georgia, Times New Roman, serif', fontSize: 22, bold: true, italic: true, align: 'right', color: '#112233' }
+      textStyle: { fontId: 'pt-serif', fontSize: 22, bold: true, italic: true, align: 'right', color: '#112233' }
     });
     expect(projectSchema.parse(useEditorStore.getState().project)).toBeTruthy();
 

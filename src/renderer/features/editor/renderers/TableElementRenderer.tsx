@@ -18,6 +18,7 @@ import { ElementFrame } from './ElementFrame';
 import { resolveTableCellAlign, resolveTableCellVerticalAlign, resolveTableRowHeight } from '@/renderer/domain/tableStyle';
 import { BufferedTextarea } from '@/renderer/components/ui/BufferedTextControl';
 import { useAutoSizeTextarea } from '@/renderer/components/ui/useAutoSizeTextarea';
+import { fontFamilyForId } from '@/renderer/domain/fontRegistry';
 
 const verticalContentAlign: Record<VerticalAlign, CSSProperties['justifyContent']> = {
   top: 'flex-start',
@@ -161,6 +162,7 @@ export const TableElementRenderer = ({
   const columnWidths = element.rows[0]?.cells.map((cell) => cell.widthMm) ?? [];
   const totalColumnWidth = columnWidths.reduce((sum, width) => sum + width, 0) || element.columns.length;
   const tableVariables = {
+    '--table-font-family': fontFamilyForId(element.style.fontId),
     '--table-cell-padding': `${element.style.cellPadding * zoom}px`,
     '--table-font-size': `${element.style.fontSize * zoom}px`,
     '--table-border-width': `${(element.style.borderVisible ? element.style.borderWidth : 0) * zoom}px`,

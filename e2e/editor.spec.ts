@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { _electron as electron, type ElectronApplication, type Locator, type Page } from 'playwright';
@@ -6,9 +6,18 @@ import { _electron as electron, type ElectronApplication, type Locator, type Pag
 const projectPath = '/private/tmp/markd-e2e-proposal.markd';
 const legacyProjectPath = '/private/tmp/markd-e2e-legacy.kpdoc';
 const convertedLegacyProjectPath = '/private/tmp/markd-e2e-legacy.markd';
+const templatePath = '/private/tmp/markd-e2e-template.markd';
 const pdfPath = '/private/tmp/markd-e2e-proposal.pdf';
 const userDataPath = '/private/tmp/markd-e2e-user-data';
+const transferredProjectPath = '/private/tmp/markd-e2e-transferred.markd';
+const transferredUserDataPath = '/private/tmp/markd-e2e-transferred-user-data';
 const imagePath = '/System/Library/Automator/Send Birthday Greetings.action/Contents/Resources/4.jpg';
+const bundledFontFamilies = [
+  'MarkD Golos Text', 'MarkD Inter', 'MarkD Roboto', 'MarkD Open Sans', 'MarkD Montserrat',
+  'MarkD Manrope', 'MarkD PT Sans', 'MarkD Noto Sans', 'MarkD Source Sans 3', 'MarkD Rubik',
+  'MarkD PT Serif', 'MarkD Noto Serif', 'MarkD Source Serif 4', 'MarkD Merriweather', 'MarkD Roboto Slab',
+  'MarkD Lora', 'MarkD Playfair Display', 'MarkD Literata', 'MarkD JetBrains Mono', 'MarkD Roboto Mono'
+] as const;
 const screenshotPaths = {
   editor: '/private/tmp/markd-e2e-editor.png',
   field: '/private/tmp/markd-e2e-text-field.png',
@@ -23,7 +32,8 @@ let runtimeErrors: string[];
 
 test.beforeEach(async () => {
   rmSync(userDataPath, { recursive: true, force: true });
-  for (const path of [projectPath, legacyProjectPath, convertedLegacyProjectPath, pdfPath, ...Object.values(screenshotPaths)]) {
+  rmSync(transferredUserDataPath, { recursive: true, force: true });
+  for (const path of [projectPath, templatePath, transferredProjectPath, legacyProjectPath, convertedLegacyProjectPath, pdfPath, ...Object.values(screenshotPaths)]) {
     if (existsSync(path)) unlinkSync(path);
   }
 
@@ -45,13 +55,15 @@ test.beforeEach(async () => {
       canceled: false,
       filePaths: [options?.filters?.some((filter) => filter.extensions?.some((extension) => extension === 'markd' || extension === 'kpdoc')) ? paths.projectPath : paths.imagePath]
     });
-    dialog.showSaveDialog = async (_baseWindow, options) => ({
-      canceled: false,
-      filePath: options?.filters?.some((filter) => filter.extensions?.includes('pdf'))
-        ? paths.pdfPath
-        : paths.projectPath
-    });
-  }, { imagePath, pdfPath, projectPath });
+    dialog.showSaveDialog = async (_baseWindow, options) => {
+      const isPdf = options?.filters?.some((filter) => filter.extensions?.includes('pdf'));
+      const isTemplate = options?.filters?.some((filter) => filter.name === 'Шаблон MarkD');
+      return {
+        canceled: false,
+        filePath: isPdf ? paths.pdfPath : isTemplate ? paths.templatePath : paths.projectPath
+      };
+    };
+  }, { imagePath, pdfPath, projectPath, templatePath });
 
   window = await electronApp.firstWindow();
   window.on('console', (message) => {
@@ -85,6 +97,11 @@ const dragBy = async (handle: Locator, deltaX: number, deltaY: number): Promise<
 const addElement = async (name: RegExp): Promise<void> => {
   await window.getByRole('button', { name: 'Добавить', exact: true }).click();
   await window.getByRole('menuitem', { name }).click();
+};
+
+const saveFileFromMenu = async (): Promise<void> => {
+  await window.getByRole('button', { name: /^Сохранить(?: ·)?$/ }).click();
+  await window.getByRole('menuitem', { name: /^Сохранить файл/ }).click();
 };
 
 const pdfPageCount = (path: string): number =>
@@ -123,8 +140,37 @@ test('shows the MarkD project screen and preserves history across core actions',
   expect(runtimeErrors).toEqual([]);
 });
 
+test('saves a template copy and keeps Command or Control S bound to file saving', async () => {
+  await addElement(/^Текст Свободный/);
+  const saveTrigger = window.getByTitle('Варианты сохранения');
+
+  await saveTrigger.focus();
+  await saveTrigger.press('ArrowDown');
+  const saveFileItem = window.getByRole('menuitem', { name: /^Сохранить файл/ });
+  const saveTemplateItem = window.getByRole('menuitem', { name: /^Сохранить как шаблон/ });
+  await expect(saveFileItem).toBeFocused();
+  await saveFileItem.press('ArrowDown');
+  await expect(saveTemplateItem).toBeFocused();
+  await saveTemplateItem.press('Escape');
+  await expect(saveTrigger).toBeFocused();
+  await expect(saveTemplateItem).toHaveCount(0);
+
+  await saveTrigger.click();
+  await window.getByRole('menuitem', { name: /^Сохранить как шаблон/ }).click();
+  await expect.poll(() => existsSync(templatePath)).toBe(true);
+  await expect(window.getByText(/Шаблон сохранён:/)).toBeVisible();
+  await expect(saveTrigger).toHaveAccessibleName('Сохранить ·');
+  expect(existsSync(projectPath)).toBe(false);
+
+  await window.keyboard.press(process.platform === 'darwin' ? 'Meta+S' : 'Control+S');
+  await expect.poll(() => existsSync(projectPath)).toBe(true);
+  await expect(window.getByText(/Сохранено:/)).toBeVisible();
+  await expect(saveTrigger).toHaveAccessibleName('Сохранить');
+  expect(runtimeErrors).toEqual([]);
+});
+
 test('opens a saved project from the recent projects screen', async () => {
-  await window.getByRole('button', { name: /Сохранить/ }).click();
+  await saveFileFromMenu();
   await expect.poll(() => existsSync(projectPath)).toBe(true);
 
   await window.getByRole('button', { name: 'К проектам' }).click();
@@ -137,6 +183,59 @@ test('opens a saved project from the recent projects screen', async () => {
   await expect(window.getByRole('heading', { name: 'Настройки проекта' })).toBeVisible();
   await expect(window.getByText(/Открыт markd-e2e-proposal.markd/)).toBeVisible();
   expect(runtimeErrors).toEqual([]);
+});
+
+test('loads all 20 bundled document fonts without system dependencies', async () => {
+  await window.getByTestId('text-element').first().getByRole('textbox', { name: 'Текст на странице' }).click();
+  const fontSelect = window.getByLabel('Гарнитура');
+  await expect(fontSelect.locator('option')).toHaveCount(20);
+
+  const loaded = await window.evaluate(async (families) => Promise.all(families.map(async (family) => {
+    const faces = await document.fonts.load(`400 16px "${family}"`, 'Ая Ёё № ₽ —');
+    return faces.length > 0;
+  })), bundledFontFamilies);
+  expect(loaded).toEqual(bundledFontFamilies.map(() => true));
+});
+
+test('opens a copied self-contained project on a clean profile', async () => {
+  test.setTimeout(60_000);
+  await window.getByTestId('text-element').first().getByRole('textbox', { name: 'Текст на странице' }).click();
+  await window.getByLabel('Гарнитура').selectOption('pt-serif');
+  await addElement(/^Изображение/);
+  await expect(window.getByTestId('image-element')).toHaveCount(1);
+
+  await saveFileFromMenu();
+  await expect.poll(() => existsSync(projectPath)).toBe(true);
+  copyFileSync(projectPath, transferredProjectPath);
+  unlinkSync(projectPath);
+  await electronApp.close();
+
+  electronApp = await electron.launch({
+    args: ['.', transferredProjectPath],
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      NODE_ENV: 'development',
+      VITE_DEV_SERVER_URL: 'http://127.0.0.1:40173',
+      MARKD_USER_DATA_DIR: transferredUserDataPath,
+      MARKD_E2E_HEADLESS: '1'
+    }
+  });
+  window = await electronApp.firstWindow();
+  await expect(window.locator('.app-shell')).toBeVisible({ timeout: 15_000 });
+  await expect(window.getByText(/Открыт markd-e2e-transferred.markd/)).toBeVisible();
+  await expect(window.getByTestId('image-element').locator('img')).toBeVisible();
+  await expect.poll(() => window.getByTestId('text-element').first().evaluate(async (node) => {
+    await document.fonts.ready;
+    return getComputedStyle(node.querySelector('.document-text')!).fontFamily;
+  })).toContain('MarkD PT Serif');
+
+  const transferred = JSON.parse(readFileSync(transferredProjectPath, 'utf8')) as {
+    assets: Array<{ dataUrl: string }>;
+    pages: Array<{ elements: Array<{ type: string; style?: { fontId?: string } }> }>;
+  };
+  expect(transferred.assets[0].dataUrl).toMatch(/^data:image\/(jpeg|png|webp);base64,/);
+  expect(transferred.pages[0].elements.find((element) => element.type === 'text')?.style?.fontId).toBe('pt-serif');
 });
 
 test('writes renderer diagnostics to the application data logs', async () => {
@@ -187,7 +286,7 @@ test('creates, saves and exports a proposal without image/table overlap', async 
   await tableY.fill('158');
   await expect(tableY).toHaveValue('158');
 
-  await window.getByRole('button', { name: /Сохранить/ }).click();
+  await saveFileFromMenu();
   await expect.poll(() => existsSync(projectPath)).toBe(true);
   await expect(window.getByText(/Сохранено:/)).toBeVisible();
 
@@ -322,7 +421,7 @@ test('rounds a rectangle and edits its centered text on double click', async () 
   const shape = window.getByTestId('shape-element');
 
   await window.getByLabel('Скругление, px').fill('18');
-  await window.getByLabel('Гарнитура').selectOption('Georgia, Times New Roman, serif');
+  await window.getByLabel('Гарнитура').selectOption('pt-serif');
   await window.getByLabel('Размер, px').fill('20');
   await shape.dblclick();
 
@@ -333,7 +432,7 @@ test('rounds a rectangle and edits its centered text on double click', async () 
 
   await expect(shape.locator('rect')).toHaveAttribute('rx', /^(?!0(?:\.0+)?$).+/);
   await expect(shape.locator('.shape-text-presentation')).toHaveText('Условия предложения');
-  await expect(shape.locator('.shape-text-presentation')).toHaveCSS('font-family', /Georgia/);
+  await expect(shape.locator('.shape-text-presentation')).toHaveCSS('font-family', /MarkD PT Serif/);
   await expect(shape.locator('.shape-text-presentation')).toHaveCSS('text-align', 'center');
 
   const editTextButton = shape.getByRole('button', { name: 'Редактировать текст фигуры' });
@@ -541,7 +640,7 @@ test('keeps the full image and white transparent background after saving and reo
   expect(resizeBox!.y + resizeBox!.height).toBeLessThanOrEqual(pageBox!.y + pageBox!.height);
   await expect(imageElement.locator('img')).toHaveCSS('object-fit', 'fill');
 
-  await window.getByRole('button', { name: /Сохранить/ }).click();
+  await saveFileFromMenu();
   await expect.poll(() => existsSync(projectPath)).toBe(true);
   await window.getByRole('button', { name: 'К проектам' }).click();
   await window.getByRole('button', { name: 'Открыть проект markd-e2e-proposal' }).click();
@@ -688,7 +787,7 @@ test('isolates layers and persists text/table styling', async () => {
   await window.getByLabel('Выравнивание строки 1', { exact: true }).selectOption('right');
   await expect.poll(() => table.locator('textarea').first().evaluate((node) => getComputedStyle(node).textAlign)).toBe('right');
 
-  await window.getByRole('button', { name: /Сохранить/ }).click();
+  await saveFileFromMenu();
   await expect.poll(() => existsSync(projectPath)).toBe(true);
   const saved = JSON.parse(readFileSync(projectPath, 'utf8')) as {
     layers: unknown[];
@@ -776,7 +875,7 @@ test('configures table title, header, rows, columns and borders', async () => {
     paddingLeft: getComputedStyle(node).paddingLeft
   }))).toEqual({ fontSize: '13px', fontWeight: '700', paddingLeft: '10px' });
 
-  await window.getByRole('button', { name: /Сохранить/ }).click();
+  await saveFileFromMenu();
   await expect.poll(() => existsSync(projectPath)).toBe(true);
   const saved = JSON.parse(readFileSync(projectPath, 'utf8')) as {
     pages: Array<{ elements: Array<{ type: string; showPageHeader?: boolean; style?: Record<string, unknown> }> }>;
@@ -838,9 +937,9 @@ test('opens and upgrades an existing schemaVersion 1 project', async () => {
   await expect(legacyText).toHaveValue('Документ из предыдущей версии');
   await expect.poll(() => legacyText.evaluate((node) => getComputedStyle(node).textAlign)).toBe('center');
 
-  await window.getByRole('button', { name: /Сохранить/ }).click();
+  await saveFileFromMenu();
   await expect.poll(() => existsSync(convertedLegacyProjectPath)).toBe(true);
-  await expect.poll(() => (JSON.parse(readFileSync(convertedLegacyProjectPath, 'utf8')) as { schemaVersion: number }).schemaVersion).toBe(3);
+  await expect.poll(() => (JSON.parse(readFileSync(convertedLegacyProjectPath, 'utf8')) as { schemaVersion: number }).schemaVersion).toBe(4);
   expect(runtimeErrors).toEqual([]);
 });
 
@@ -861,7 +960,7 @@ test('edits fields, alignment, long content, clean preview, reopening and PDF', 
   await window.getByLabel('Подпись', { exact: true }).fill('Email клиента');
   await window.getByLabel('Значение').fill('sales.department.with.a.very.long.address@example-company.test');
   await window.getByLabel('Placeholder', { exact: true }).fill('name@example.com');
-  await window.getByLabel('Иконка Lucide').selectOption('mail');
+  await window.locator('.inspector-block label').filter({ hasText: /^Иконка/ }).locator('select').selectOption('mail');
   await window.getByLabel('Иконка: HEX').fill('#c2410c');
   await window.getByLabel('Иконка: HEX').press('Enter');
   await window.getByRole('checkbox', { name: 'Прозрачный фон' }).check();
@@ -953,7 +1052,7 @@ test('edits fields, alignment, long content, clean preview, reopening and PDF', 
   await expect.poll(() => window.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await window.screenshot({ path: screenshotPaths.narrow, fullPage: false });
 
-  await window.getByRole('button', { name: /Сохранить/ }).click();
+  await saveFileFromMenu();
   await expect.poll(() => existsSync(projectPath)).toBe(true);
   const saved = JSON.parse(readFileSync(projectPath, 'utf8')) as {
     schemaVersion: number;
@@ -966,7 +1065,7 @@ test('edits fields, alignment, long content, clean preview, reopening and PDF', 
       style?: { iconColor?: string; backgroundTransparent?: boolean; borderVisible?: boolean };
     }> }>;
   };
-  expect(saved.schemaVersion).toBe(3);
+  expect(saved.schemaVersion).toBe(4);
   expect(saved.pages[0].elements.find((element) => element.type === 'textField')).toMatchObject({
     showLabel: false,
     showPlaceholder: false,

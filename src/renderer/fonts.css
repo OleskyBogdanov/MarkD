@@ -1,0 +1,42 @@
+/* Document fonts are bundled with MarkD so projects render independently of OS fonts. */
+@font-face { font-family: 'MarkD Golos Text'; src: url('./assets/fonts/golos-text/normal.woff2') format('woff2'); font-style: normal; font-weight: 400 900; font-display: block; }
+@font-face { font-family: 'MarkD Inter'; src: url('./assets/fonts/inter/normal.woff2') format('woff2'); font-style: normal; font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'MarkD Inter'; src: url('./assets/fonts/inter/italic.woff2') format('woff2'); font-style: italic; font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'MarkD Roboto'; src: url('./assets/fonts/roboto/normal.woff2') format('woff2'); font-style: normal; font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'MarkD Roboto'; src: url('./assets/fonts/roboto/italic.woff2') format('woff2'); font-style: italic; font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'MarkD Open Sans'; src: url('./assets/fonts/open-sans/normal.woff2') format('woff2'); font-style: normal; font-weight: 300 800; font-display: block; }
+@font-face { font-family: 'MarkD Open Sans'; src: url('./assets/fonts/open-sans/italic.woff2') format('woff2'); font-style: italic; font-weight: 300 800; font-display: block; }
+@font-face { font-family: 'MarkD Montserrat'; src: url('./assets/fonts/montserrat/normal.woff2') format('woff2'); font-style: normal; font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'MarkD Montserrat'; src: url('./assets/fonts/montserrat/italic.woff2') format('woff2'); font-style: italic; font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'MarkD Manrope'; src: url('./assets/fonts/manrope/normal.woff2') format('woff2'); font-style: normal; font-weight: 200 800; font-display: block; }
+@font-face { font-family: 'MarkD PT Sans'; src: url('./assets/fonts/pt-sans/regular.woff2') format('woff2'); font-style: normal; font-weight: 400; font-display: block; }
+@font-face { font-family: 'MarkD PT Sans'; src: url('./assets/fonts/pt-sans/italic.woff2') format('woff2'); font-style: italic; font-weight: 400; font-display: block; }
+@font-face { font-family: 'MarkD PT Sans'; src: url('./assets/fonts/pt-sans/bold.woff2') format('woff2'); font-style: normal; font-weight: 700; font-display: block; }
+@font-face { font-family: 'MarkD PT Sans'; src: url('./assets/fonts/pt-sans/bold-italic.woff2') format('woff2'); font-style: italic; font-weight: 700; font-display: block; }
+@font-face { font-family: 'MarkD Noto Sans'; src: url('./assets/fonts/noto-sans/normal.woff2') format('woff2'); font-style: normal; font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'MarkD Noto Sans'; src: url('./assets/fonts/noto-sans/italic.woff2') format('woff2'); font-style: italic; font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'MarkD Source Sans 3'; src: url('./assets/fonts/source-sans-3/normal.woff2') format('woff2'); font-style: normal; font-weight: 200 900; font-display: block; }
+@font-face { font-family: 'MarkD Source Sans 3'; src: url('./assets/fonts/source-sans-3/italic.woff2') format('woff2'); font-style: italic; font-weight: 200 900; font-display: block; }
+@font-face { font-family: 'MarkD Rubik'; src: url('./assets/fonts/rubik/normal.woff2') format('woff2'); font-style: normal; font-weight: 300 900; font-display: block; }
+@font-face { font-family: 'MarkD Rubik'; src: url('./assets/fonts/rubik/italic.woff2') format('woff2'); font-style: italic; font-weight: 300 900; font-display: block; }
+@font-face { font-family: 'MarkD PT Serif'; src: url('./assets/fonts/pt-serif/regular.woff2') format('woff2'); font-style: normal; font-weight: 400; font-display: block; }
+@font-face { font-family: 'MarkD PT Serif'; src: url('./assets/fonts/pt-serif/italic.woff2') format('woff2'); font-style: italic; font-weight: 400; font-display: block; }
+@font-face { font-family: 'MarkD PT Serif'; src: url('./assets/fonts/pt-serif/bold.woff2') format('woff2'); font-style: normal; font-weight: 700; font-display: block; }
+@font-face { font-family: 'MarkD PT Serif'; src: url('./assets/fonts/pt-serif/bold-italic.woff2') format('woff2'); font-style: italic; font-weight: 700; font-display: block; }
+@font-face { font-family: 'MarkD Noto Serif'; src: url('./assets/fonts/noto-serif/normal.woff2') format('woff2'); font-style: normal; font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'MarkD Noto Serif'; src: url('./assets/fonts/noto-serif/italic.woff2') format('woff2'); font-style: italic; font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'MarkD Source Serif 4'; src: url('./assets/fonts/source-serif-4/normal.woff2') format('woff2'); font-style: normal; font-weight: 200 900; font-display: block; }
+@font-face { font-family: 'MarkD Source Serif 4'; src: url('./assets/fonts/source-serif-4/italic.woff2') format('woff2'); font-style: italic; font-weight: 200 900; font-display: block; }
+@font-face { font-family: 'MarkD Merriweather'; src: url('./assets/fonts/merriweather/normal.woff2') format('woff2'); font-style: normal; font-weight: 300 900; font-display: block; }
+@font-face { font-family: 'MarkD Merriweather'; src: url('./assets/fonts/merriweather/italic.woff2') format('woff2'); font-style: italic; font-weight: 300 900; font-display: block; }
+@font-face { font-family: 'MarkD Roboto Slab'; src: url('./assets/fonts/roboto-slab/normal.woff2') format('woff2'); font-style: normal; font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'MarkD Lora'; src: url('./assets/fonts/lora/normal.woff2') format('woff2'); font-style: normal; font-weight: 400 700; font-display: block; }
+@font-face { font-family: 'MarkD Lora'; src: url('./assets/fonts/lora/italic.woff2') format('woff2'); font-style: italic; font-weight: 400 700; font-display: block; }
+@font-face { font-family: 'MarkD Playfair Display'; src: url('./assets/fonts/playfair-display/normal.woff2') format('woff2'); font-style: normal; font-weight: 400 900; font-display: block; }
+@font-face { font-family: 'MarkD Playfair Display'; src: url('./assets/fonts/playfair-display/italic.woff2') format('woff2'); font-style: italic; font-weight: 400 900; font-display: block; }
+@font-face { font-family: 'MarkD Literata'; src: url('./assets/fonts/literata/normal.woff2') format('woff2'); font-style: normal; font-weight: 200 900; font-display: block; }
+@font-face { font-family: 'MarkD Literata'; src: url('./assets/fonts/literata/italic.woff2') format('woff2'); font-style: italic; font-weight: 200 900; font-display: block; }
+@font-face { font-family: 'MarkD JetBrains Mono'; src: url('./assets/fonts/jetbrains-mono/normal.woff2') format('woff2'); font-style: normal; font-weight: 100 800; font-display: block; }
+@font-face { font-family: 'MarkD JetBrains Mono'; src: url('./assets/fonts/jetbrains-mono/italic.woff2') format('woff2'); font-style: italic; font-weight: 100 800; font-display: block; }
+@font-face { font-family: 'MarkD Roboto Mono'; src: url('./assets/fonts/roboto-mono/normal.woff2') format('woff2'); font-style: normal; font-weight: 100 700; font-display: block; }
+@font-face { font-family: 'MarkD Roboto Mono'; src: url('./assets/fonts/roboto-mono/italic.woff2') format('woff2'); font-style: italic; font-weight: 100 700; font-display: block; }

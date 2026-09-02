@@ -58,7 +58,7 @@ describe('схема проекта', () => {
               rect: { x: 10, y: 10, width: 20, height: 10 },
               text: 'Проверка',
               style: {
-                fontFamily: 'Arial',
+                fontId: 'inter',
                 fontSize: 12,
                 bold: false,
                 italic: false,
@@ -215,7 +215,7 @@ describe('схема проекта', () => {
     });
   });
 
-  test('мигрирует документ v1 и повторно открывает сериализованный v3', () => {
+  test('мигрирует документ v1 и повторно открывает сериализованный v4', () => {
     const legacy = {
       schemaVersion: 1,
       metadata: { title: 'Старое КП' },
@@ -242,7 +242,7 @@ describe('схема проекта', () => {
     const migrated = migrateProject(legacy);
     expect(migrated.schemaVersion).toBe(schemaVersion);
     expect(migrated.layers).toEqual([{ id: 'layer_main', name: 'Основной', order: 0, visible: true, locked: false }]);
-    expect(migrated.pages[0].elements[0]).toMatchObject({ layerId: 'layer_main', style: { color: '#23241f' } });
+    expect(migrated.pages[0].elements[0]).toMatchObject({ layerId: 'layer_main', style: { color: '#23241f', fontId: 'noto-sans' } });
     expect(migrated.pages[0].elements[0]).toMatchObject({ type: 'text', text: 'Старый документ' });
     expect(migrateProject(JSON.parse(serializeProject(migrated)))).toEqual(migrated);
   });
@@ -265,6 +265,28 @@ describe('схема проекта', () => {
     const table = migrated.pages[0].elements[0];
     expect(table).toMatchObject({ type: 'table', layerId: 'layer_main' });
     if (table.type !== 'table') throw new Error('Таблица не мигрирована');
-    expect(table.style).toMatchObject({ textColor: '#23241f', align: 'left' });
+    expect(table.style).toMatchObject({ textColor: '#23241f', align: 'left', fontId: 'inter' });
+  });
+
+  test('мигрирует системные шрифты документа v3 в переносимые идентификаторы', () => {
+    const now = new Date().toISOString();
+    const migrated = migrateProject({
+      schemaVersion: 3,
+      metadata: { id: 'project-v3', title: 'Версия 3', createdAt: now, updatedAt: now },
+      orientation: 'portrait',
+      layers: [{ id: 'layer_main', name: 'Основной', order: 0, visible: true, locked: false }],
+      pages: [{
+        id: 'p1', widthMm: 210, heightMm: 297, background: null, flowStartYmm: 8,
+        elements: [{
+          id: 'text1', type: 'text', rect: { x: 10, y: 10, width: 100, height: 20 }, text: 'Текст',
+          style: { fontFamily: 'Georgia, Times New Roman, serif', fontSize: 14, bold: false, italic: false, align: 'left', color: '#23241f' },
+          layerId: 'layer_main', zIndex: 0
+        }]
+      }],
+      assets: [], styles: {}
+    });
+
+    expect(migrated.metadata.renderProfileVersion).toBe(1);
+    expect(migrated.pages[0].elements[0]).toMatchObject({ type: 'text', style: { fontId: 'pt-serif' } });
   });
 });

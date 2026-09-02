@@ -6,6 +6,20 @@ const menuCommandSchema = z.object({
   command: z.enum(['undo', 'redo', 'new-document', 'save', 'open', 'export-pdf', 'delete'])
 });
 
+const openProjectResultSchema = z.object({ path: z.string().min(1), snapshot: z.string().min(1) });
+const pendingExternalProjects: OpenProjectResult[] = [];
+const externalProjectHandlers = new Set<(payload: OpenProjectResult) => void>();
+
+ipcRenderer.on(IPC_CHANNEL.OPEN_PROJECT_FROM_OS, (_event, payload: unknown) => {
+  const parsed = openProjectResultSchema.safeParse(payload);
+  if (!parsed.success) return;
+  if (externalProjectHandlers.size === 0) {
+    pendingExternalProjects.push(parsed.data);
+    return;
+  }
+  externalProjectHandlers.forEach((handler) => handler(parsed.data));
+});
+
 contextBridge.exposeInMainWorld('desktop', {
   openProject: async (): Promise<OpenProjectResult | null> => {
     return ipcRenderer.invoke(IPC_CHANNEL.OPEN_PROJECT);
@@ -19,6 +33,9 @@ contextBridge.exposeInMainWorld('desktop', {
   },
   saveProjectAs: async (snapshot: string): Promise<string | null> => {
     return ipcRenderer.invoke(IPC_CHANNEL.SAVE_PROJECT_AS, snapshot);
+  },
+  saveTemplate: async (snapshot: string): Promise<string | null> => {
+    return ipcRenderer.invoke(IPC_CHANNEL.SAVE_TEMPLATE, snapshot);
   },
   importImage: async (): Promise<ImportImageResult | null> => {
     return ipcRenderer.invoke(IPC_CHANNEL.IMPORT_IMAGE);
@@ -45,5 +62,13 @@ contextBridge.exposeInMainWorld('desktop', {
 
     ipcRenderer.on(IPC_CHANNEL.MENU_CMD, listener);
     return () => ipcRenderer.removeListener(IPC_CHANNEL.MENU_CMD, listener);
+  },
+  onExternalProjectOpen: (handler: (payload: OpenProjectResult) => void): (() => void) => {
+    externalProjectHandlers.add(handler);
+    queueMicrotask(() => {
+      if (!externalProjectHandlers.has(handler)) return;
+      pendingExternalProjects.splice(0).forEach(handler);
+    });
+    return () => externalProjectHandlers.delete(handler);
   }
 });

@@ -4,15 +4,21 @@ import { randomUUID } from 'node:crypto';
 import { basename, extname, join } from 'node:path';
 import { z } from 'zod';
 import { IPC_CHANNEL, type RecentProjectSummary, type SaveProjectArgs } from '../../shared/ipc-channels.js';
-import { migrateProject, projectSchema, serializeProject } from '../../shared/projectSchema.js';
+import { projectSchema } from '../../shared/projectSchema.js';
 import { assertRendererOrigin, registerIpcChannel } from './ipcRegistry.js';
-import { defaultPdfPath, defaultProjectPath, ensureMarkdDirectories } from '../storage/markdPaths.js';
+import { defaultPdfPath, defaultProjectPath, defaultTemplatePath, ensureMarkdDirectories } from '../storage/markdPaths.js';
 import { writeLog } from '../logging/appLogger.js';
+import {
+  detectImageMimeType,
+  ensureSafeProjectSnapshot,
+  isProjectFile,
+  MAX_IMAGE_BYTES,
+  MAX_IMAGE_DATA_URL_BYTES,
+  readSafeProject,
+  writeProjectAtomically
+} from '../storage/projectFileService.js';
 
-const MAX_PROJECT_BYTES = 64 * 1024 * 1024;
-const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_PDF_BYTES = 64 * 1024 * 1024;
-const MAX_IMAGE_DATA_URL_BYTES = Math.ceil(MAX_IMAGE_BYTES * 1.45);
 
 const importImageResultSchema = z.object({
   id: z.string(),
@@ -39,11 +45,6 @@ const recentProjectEntrySchema = z.object({
 
 const recentProjectListSchema = z.array(recentProjectEntrySchema).max(100);
 let recentProjects: RecentProjectEntry[] | null = null;
-
-const isProjectFile = (filePath: string): boolean => {
-  const extension = extname(filePath).toLowerCase();
-  return extension === '.markd' || extension === '.kpdoc';
-};
 
 const recentProjectsPath = (): string => join(ensureMarkdDirectories().root, 'recent-projects.json');
 
@@ -131,36 +132,6 @@ const withMainWindowFromEvent = (_event: IpcMainInvokeEvent | IpcMainEvent): Bro
   return window;
 };
 
-const ensureSafeProjectSnapshot = (snapshot: string): string => {
-  if (typeof snapshot !== 'string') {
-    throw new Error('Неверный тип проекта.');
-  }
-  if (snapshot.length > MAX_PROJECT_BYTES) {
-    throw new Error('Слишком большой проектный снимок.');
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(snapshot);
-  } catch {
-    throw new Error('Неверный JSON-проект.');
-  }
-
-  return serializeProject(migrateProject(parsed));
-};
-
-const readSafeProject = (filePath: string): { path: string; snapshot: string } => {
-  const raw = readFileSync(filePath, 'utf8');
-  if (Buffer.byteLength(raw, 'utf8') > MAX_PROJECT_BYTES) {
-    throw new Error('Слишком большой проектный файл.');
-  }
-
-  return {
-    path: filePath,
-    snapshot: ensureSafeProjectSnapshot(raw)
-  };
-};
-
 const ensurePath = (path: string | null | undefined): string => {
   if (!path) {
     throw new Error('Не указан путь для сохранения проекта.');
@@ -194,36 +165,6 @@ const normalizePdfPath = (path: string): string => {
   return normalized.toLowerCase().endsWith('.pdf') ? normalized : `${normalized}.pdf`;
 };
 
-const writeProjectAtomically = (filePath: string, contents: string): void => {
-  const tempPath = `${filePath}.${randomUUID()}.tmp`;
-  try {
-    writeFileSync(tempPath, contents, 'utf8');
-    renameSync(tempPath, filePath);
-  } catch (renameOrFallbackError) {
-    try {
-      writeFileSync(filePath, contents, 'utf8');
-    } catch (writeError) {
-      try {
-        unlinkSync(tempPath);
-      } catch {
-        // игнорировать ошибку удаления временного файла
-      }
-      if (writeError instanceof Error) {
-        throw writeError;
-      }
-      throw renameOrFallbackError instanceof Error
-        ? renameOrFallbackError
-        : new Error('Не удалось записать файл проекта.');
-    } finally {
-      try {
-        unlinkSync(tempPath);
-      } catch {
-        // игнорировать ошибку удаления временного файла
-      }
-    }
-  }
-};
-
 const registerRecent = (path: string): void => {
   const entries = loadRecentProjects();
   const existingIndex = entries.findIndex((item) => item.path === path);
@@ -236,6 +177,13 @@ const registerRecent = (path: string): void => {
     entries.length = 20;
   }
   persistRecentProjects();
+};
+
+export const openProjectFromPath = (filePath: string): { path: string; snapshot: string } => {
+  const loaded = readSafeProject(filePath);
+  registerRecent(loaded.path);
+  writeLog('info', 'project.opened-from-path', undefined, { path: loaded.path });
+  return loaded;
 };
 
 export const registerIpcHandlers = (): void => {
@@ -254,8 +202,7 @@ export const registerIpcHandlers = (): void => {
     }
 
     try {
-      const loaded = readSafeProject(result.filePaths[0]);
-      registerRecent(loaded.path);
+      const loaded = openProjectFromPath(result.filePaths[0]);
       writeLog('info', 'project.opened', undefined, { path: loaded.path });
       return loaded;
     } catch (error) {
@@ -272,8 +219,7 @@ export const registerIpcHandlers = (): void => {
     if (!entry) throw new Error('Проект отсутствует в списке недавних.');
 
     try {
-      const loaded = readSafeProject(entry.path);
-      registerRecent(loaded.path);
+      const loaded = openProjectFromPath(entry.path);
       writeLog('info', 'project.opened-recent', undefined, { path: loaded.path });
       return loaded;
     } catch (error) {
@@ -328,6 +274,32 @@ export const registerIpcHandlers = (): void => {
     }
   });
 
+  ipcMain.handle(IPC_CHANNEL.SAVE_TEMPLATE, async (event, snapshot: string) => {
+    const window = withMainWindowFromEvent(event);
+    const safeSnapshot = ensureSafeProjectSnapshot(snapshot);
+    const project = projectSchema.parse(JSON.parse(safeSnapshot));
+    const result = await dialog.showSaveDialog(window, {
+      title: 'Сохранить как шаблон',
+      buttonLabel: 'Сохранить шаблон',
+      defaultPath: defaultTemplatePath(project.metadata.title),
+      filters: [{ name: 'Шаблон MarkD', extensions: ['markd'] }]
+    });
+
+    if (result.canceled || !result.filePath) {
+      return null;
+    }
+
+    const resolvedPath = normalizeProjectPath(result.filePath);
+    try {
+      writeProjectAtomically(resolvedPath, safeSnapshot);
+      writeLog('info', 'project.template-saved', undefined, { path: resolvedPath });
+      return resolvedPath;
+    } catch (error) {
+      writeLog('error', 'project.template-save-failed', error, { path: resolvedPath });
+      throw error;
+    }
+  });
+
   ipcMain.handle(IPC_CHANNEL.IMPORT_IMAGE, async (event) => {
     const window = withMainWindowFromEvent(event);
     const result = await dialog.showOpenDialog(window, {
@@ -345,8 +317,10 @@ export const registerIpcHandlers = (): void => {
       throw new Error('Слишком большое изображение (лимит 12 МБ).');
     }
 
-    const lower = filePath.toLowerCase();
-    const mimeType = lower.endsWith('.png') ? 'image/png' : lower.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
+    const mimeType = detectImageMimeType(raw);
+    if (!mimeType || mimeType === 'image/gif') {
+      throw new Error('Файл не является поддерживаемым изображением PNG, JPEG или WebP.');
+    }
     const dataUrl = `data:${mimeType};base64,${raw.toString('base64')}`;
 
     const reply = {

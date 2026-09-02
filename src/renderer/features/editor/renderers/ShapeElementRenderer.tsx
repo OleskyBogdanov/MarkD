@@ -11,6 +11,7 @@ import {
 import type { KpRect, KpShapeElement, RenderMode } from '@/renderer/domain/model';
 import { BufferedTextarea } from '@/renderer/components/ui/BufferedTextControl';
 import { ElementFrame } from './ElementFrame';
+import { fontFamilyForId } from '@/renderer/domain/fontRegistry';
 
 type ShapeElementRendererProps = {
   element: KpShapeElement;
@@ -59,7 +60,7 @@ export const ShapeElementRenderer = ({
     vectorEffect: 'non-scaling-stroke'
   } as CSSProperties;
   const textStyle = {
-    fontFamily: element.textStyle.fontFamily,
+    fontFamily: fontFamilyForId(element.textStyle.fontId),
     fontSize: `${element.textStyle.fontSize * zoom}px`,
     fontWeight: element.textStyle.bold ? 700 : 400,
     fontStyle: element.textStyle.italic ? 'italic' : 'normal',

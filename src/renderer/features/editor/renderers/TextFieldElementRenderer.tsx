@@ -4,6 +4,7 @@ import { DOCUMENT_ICON_REGISTRY } from '@/renderer/domain/iconRegistry';
 import { ElementFrame } from './ElementFrame';
 import { BufferedTextarea } from '@/renderer/components/ui/BufferedTextControl';
 import { useAutoSizeTextarea } from '@/renderer/components/ui/useAutoSizeTextarea';
+import { fontFamilyForId } from '@/renderer/domain/fontRegistry';
 
 const verticalContentAlign = {
   top: 'start',
@@ -40,6 +41,7 @@ export const TextFieldElementRenderer = ({
   const inputId = `canvas-${element.id}`;
   const autoSize = useAutoSizeTextarea();
   const style = {
+    '--field-font-family': fontFamilyForId(element.style.fontId),
     '--field-font-size': `${element.style.fontSize * zoom}px`,
     '--field-label-color': element.style.labelColor,
     '--field-text-color': element.style.textColor,

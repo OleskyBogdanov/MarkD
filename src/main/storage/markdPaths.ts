@@ -47,5 +47,8 @@ export const sanitizeProjectFileName = (title: string): string => {
 export const defaultProjectPath = (title: string): string =>
   join(ensureMarkdDirectories().projects, `${sanitizeProjectFileName(title)}.markd`);
 
+export const defaultTemplatePath = (title: string): string =>
+  join(ensureMarkdDirectories().projects, `${sanitizeProjectFileName(title)} — шаблон.markd`);
+
 export const defaultPdfPath = (title: string): string =>
   join(ensureMarkdDirectories().exports, `${sanitizeProjectFileName(title)}.pdf`);

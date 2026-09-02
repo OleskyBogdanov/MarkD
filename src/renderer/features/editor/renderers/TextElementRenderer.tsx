@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEve
 import type { KpRect, KpTextElement, RenderMode } from '@/renderer/domain/model';
 import { ElementFrame } from './ElementFrame';
 import { BufferedTextarea } from '@/renderer/components/ui/BufferedTextControl';
+import { fontFamilyForId } from '@/renderer/domain/fontRegistry';
 
 type TextElementRendererProps = {
   element: KpTextElement;
@@ -41,7 +42,7 @@ export const TextElementRenderer = ({
   }, [element.text, element.style, mode, rect.height, rect.width, zoom]);
 
   const contentStyle = {
-    fontFamily: element.style.fontFamily,
+    fontFamily: fontFamilyForId(element.style.fontId),
     fontSize: `${element.style.fontSize * zoom}px`,
     fontWeight: element.style.bold ? 700 : 400,
     fontStyle: element.style.italic ? 'italic' : 'normal',

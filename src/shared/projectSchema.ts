@@ -1,10 +1,13 @@
 import { z } from 'zod';
+import { DEFAULT_FONT_ID, FONT_IDS, ICON_NAMES } from './documentAssets.js';
 
-export const schemaVersion = 3 as const;
+export { DEFAULT_FONT_ID, FONT_IDS, ICON_NAMES } from './documentAssets.js';
+
+export const schemaVersion = 4 as const;
 export const DEFAULT_LAYER_ID = 'layer_main';
 
-export const ICON_NAMES = ['briefcase', 'building', 'calendar', 'hash', 'mail', 'map-pin', 'phone', 'user'] as const;
 export const iconNameSchema = z.enum(ICON_NAMES);
+export const fontIdSchema = z.enum(FONT_IDS);
 export const textAlignSchema = z.enum(['left', 'center', 'right']);
 export const verticalAlignSchema = z.enum(['top', 'middle', 'bottom']);
 export const shapeKindSchema = z.enum(['rectangle', 'ellipse', 'triangle', 'line']);
@@ -27,7 +30,7 @@ export const layerSchema = z.object({
 });
 
 export const textStyleSchema = z.object({
-  fontFamily: z.string().min(1).default('Arial, -apple-system, sans-serif'),
+  fontId: fontIdSchema.default(DEFAULT_FONT_ID),
   fontSize: z.number().min(8).max(72).default(12),
   bold: z.boolean().default(false),
   italic: z.boolean().default(false),
@@ -36,7 +39,7 @@ export const textStyleSchema = z.object({
 });
 
 export const fieldStyleSchema = z.object({
-  fontFamily: z.string().min(1).default('Arial, -apple-system, sans-serif'),
+  fontId: fontIdSchema.default(DEFAULT_FONT_ID),
   fontSize: z.number().min(8).max(32).default(12),
   textColor: colorSchema.default('#23241f'),
   labelColor: colorSchema.default('#5e6159'),
@@ -49,6 +52,7 @@ export const fieldStyleSchema = z.object({
 });
 
 export const tableStyleSchema = z.object({
+  fontId: fontIdSchema.default(DEFAULT_FONT_ID),
   textColor: colorSchema.default('#23241f'),
   backgroundColor: colorSchema.default('#fffefa'),
   headerTextColor: colorSchema.default('#ffffff'),
@@ -185,17 +189,18 @@ export const pageSchema = z.object({
   flowStartYmm: z.number().nonnegative().default(8)
 });
 
-const metadataV3Schema = z.object({
+const metadataV4Schema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   createdBy: z.string().optional(),
   createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
+  updatedAt: z.string().datetime(),
+  renderProfileVersion: z.literal(1).default(1)
 });
 
 export const projectSchema = z.object({
   schemaVersion: z.literal(schemaVersion),
-  metadata: metadataV3Schema,
+  metadata: metadataV4Schema,
   orientation: z.enum(['portrait', 'landscape']),
   layers: z.array(layerSchema).min(1),
   pages: z.array(pageSchema),
@@ -206,6 +211,9 @@ export const projectSchema = z.object({
   const assetIds = new Set(project.assets.map((asset) => asset.id));
   if (layerIds.size !== project.layers.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['layers'], message: 'ID слоёв должны быть уникальны' });
+  }
+  if (assetIds.size !== project.assets.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['assets'], message: 'ID ресурсов должны быть уникальны' });
   }
 
   project.pages.forEach((page, pageIndex) => {
@@ -243,18 +251,52 @@ export const projectSchema = z.object({
   });
 });
 
-const legacyProjectSchema = z.object({
-  schemaVersion: z.union([z.literal(1), z.literal(2)]),
-  metadata: z.object({ title: z.string().min(1), createdBy: z.string().optional() }),
-  orientation: z.enum(['portrait', 'landscape']),
-  pages: z.array(pageSchema),
-  assets: z.array(assetSchema),
-  styles: z.record(z.string(), z.unknown()).default({})
-});
-
 const makeProjectId = (): string => {
   const id = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `project_${id}`;
+};
+
+type JsonObject = Record<string, unknown>;
+
+const isObject = (value: unknown): value is JsonObject => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export const legacyFontFamilyToId = (fontFamily: unknown): z.infer<typeof fontIdSchema> => {
+  if (typeof fontFamily !== 'string') return DEFAULT_FONT_ID;
+  const normalized = fontFamily.toLowerCase();
+  if (normalized.includes('avenir')) return 'manrope';
+  if (normalized.includes('menlo') || normalized.includes('monaco') || normalized.includes('mono')) return 'jetbrains-mono';
+  if (normalized.includes('arial') || normalized.includes('sans')) return 'noto-sans';
+  if (normalized.includes('georgia') || normalized.includes('times') || normalized.includes('serif')) return 'pt-serif';
+  return DEFAULT_FONT_ID;
+};
+
+const migrateStyleFont = (style: unknown): unknown => {
+  if (!isObject(style)) return style;
+  if ('fontId' in style) return style;
+  return { ...style, fontId: legacyFontFamilyToId(style['fontFamily']) };
+};
+
+const migrateElementFonts = (element: unknown): unknown => {
+  if (!isObject(element)) return element;
+  switch (element['type']) {
+    case 'text':
+    case 'textField':
+    case 'selectField':
+    case 'table':
+      return { ...element, style: migrateStyleFont(element['style']) };
+    case 'shape':
+      return { ...element, textStyle: migrateStyleFont(element['textStyle']) };
+    default:
+      return element;
+  }
+};
+
+const migratePages = (pages: unknown): unknown => {
+  if (!Array.isArray(pages)) return pages;
+  return pages.map((page) => {
+    if (!isObject(page) || !Array.isArray(page['elements'])) return page;
+    return { ...page, elements: page['elements'].map(migrateElementFonts) };
+  });
 };
 
 export const migrateProject = (input: unknown): KpProject => {
@@ -263,14 +305,25 @@ export const migrateProject = (input: unknown): KpProject => {
     : undefined;
 
   if (version === schemaVersion) return projectSchema.parse(input);
-  if (version === 1 || version === 2) {
-    const legacy = legacyProjectSchema.parse(input);
+  if (version === 1 || version === 2 || version === 3) {
+    if (!isObject(input)) throw new Error('Неверная структура проекта.');
     const now = new Date().toISOString();
+    const metadata = isObject(input['metadata']) ? input['metadata'] : {};
+    const needsLegacyMetadata = version === 1 || version === 2;
     return projectSchema.parse({
-      ...legacy,
+      ...input,
       schemaVersion,
-      metadata: { ...legacy.metadata, id: makeProjectId(), createdAt: now, updatedAt: now },
-      layers: [{ id: DEFAULT_LAYER_ID, name: 'Основной', order: 0, visible: true, locked: false }]
+      metadata: {
+        ...metadata,
+        id: needsLegacyMetadata ? makeProjectId() : metadata['id'],
+        createdAt: needsLegacyMetadata ? now : metadata['createdAt'],
+        updatedAt: needsLegacyMetadata ? now : metadata['updatedAt'],
+        renderProfileVersion: 1
+      },
+      layers: needsLegacyMetadata
+        ? [{ id: DEFAULT_LAYER_ID, name: 'Основной', order: 0, visible: true, locked: false }]
+        : input['layers'],
+      pages: migratePages(input['pages'])
     });
   }
   if (typeof version === 'number' && version > schemaVersion) {
@@ -282,6 +335,7 @@ export const migrateProject = (input: unknown): KpProject => {
 export const serializeProject = (project: KpProject): string => JSON.stringify(projectSchema.parse(project));
 
 export type IconName = z.infer<typeof iconNameSchema>;
+export type FontId = z.infer<typeof fontIdSchema>;
 export type TextAlign = z.infer<typeof textAlignSchema>;
 export type VerticalAlign = z.infer<typeof verticalAlignSchema>;
 export type ShapeKind = z.infer<typeof shapeKindSchema>;

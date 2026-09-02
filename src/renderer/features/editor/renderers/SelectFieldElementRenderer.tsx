@@ -2,6 +2,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { KpRect, KpSelectFieldElement, RenderMode } from '@/renderer/domain/model';
 import { ElementFrame } from './ElementFrame';
+import { fontFamilyForId } from '@/renderer/domain/fontRegistry';
 
 type SelectFieldElementRendererProps = {
   element: KpSelectFieldElement;
@@ -31,6 +32,7 @@ export const SelectFieldElementRenderer = ({
   const selectedOption = element.options.find((option) => option.id === element.selectedOptionId);
   const inputId = `canvas-${element.id}`;
   const style = {
+    '--field-font-family': fontFamilyForId(element.style.fontId),
     '--field-font-size': `${element.style.fontSize * zoom}px`,
     '--field-label-color': element.style.labelColor,
     '--field-text-color': element.style.textColor,

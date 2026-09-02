@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from '@/renderer/App';
 import { AppErrorBoundary } from '@/renderer/components/AppErrorBoundary';
+import './fonts.css';
 import './styles.css';
 
 window.addEventListener('error', (event) => {

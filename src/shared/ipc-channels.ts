@@ -3,13 +3,15 @@ export const IPC_CHANNEL = {
   OPEN_RECENT_PROJECT: 'project:openRecent',
   SAVE_PROJECT: 'project:save',
   SAVE_PROJECT_AS: 'project:saveAs',
+  SAVE_TEMPLATE: 'project:saveTemplate',
   IMPORT_IMAGE: 'file:importImage',
   EXPORT_PDF: 'project:exportPdf',
   NEW_DOC: 'project:new',
   GET_RECENT: 'project:recent',
   SET_DIRTY: 'project:setDirty',
   LOG_RENDERER_ERROR: 'diagnostics:rendererError',
-  MENU_CMD: 'menu:command'
+  MENU_CMD: 'menu:command',
+  OPEN_PROJECT_FROM_OS: 'project:openFromOs'
 } as const;
 
 export type RendererErrorPayload = {
