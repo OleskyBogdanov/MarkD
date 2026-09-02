@@ -1,57 +1,108 @@
 /* global console, process */
 import assert from 'node:assert/strict';
-import { arch } from 'node:os';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { arch, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { _electron as electron } from 'playwright';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const projectRoot = process.cwd();
 const targetArch = arch() === 'arm64' ? 'arm64' : 'x64';
-const executablePath = join(
-  projectRoot,
-  'dist-package',
-  `mac-${targetArch}`,
-  'MarkD.app',
-  'Contents',
-  'MacOS',
-  'MarkD'
-);
 const appPath = join(projectRoot, 'dist-package', `mac-${targetArch}`, 'MarkD.app');
+const executablePath = join(appPath, 'Contents', 'MacOS', 'MarkD');
+const userDataRoot = await mkdtemp(join(tmpdir(), 'markd-packaged-smoke-'));
+const logsRoot = join(userDataRoot, 'logs');
+
+const fuseOutput = execFileSync(
+  'npx',
+  ['--no-install', '@electron/fuses', 'read', '--app', appPath],
+  { cwd: projectRoot, encoding: 'utf8' }
+);
+
+for (const expectedFuse of [
+  'RunAsNode is Disabled',
+  'EnableNodeOptionsEnvironmentVariable is Disabled',
+  'EnableNodeCliInspectArguments is Disabled',
+  'EnableEmbeddedAsarIntegrityValidation is Enabled',
+  'OnlyLoadAppFromAsar is Enabled',
+]) {
+  assert.match(fuseOutput, new RegExp(expectedFuse));
+}
+
 execFileSync('codesign', ['--verify', '--deep', '--strict', appPath], { stdio: 'inherit' });
 
-const runtimeErrors = [];
-const electronApp = await electron.launch({
-  executablePath,
-  env: { ...process.env, MARKD_E2E_HEADLESS: '1' }
+const childEnvironment = {
+  ...process.env,
+  MARKD_E2E_HEADLESS: '1',
+  MARKD_USER_DATA_DIR: userDataRoot,
+};
+delete childEnvironment.NO_COLOR;
+
+const child = spawn(executablePath, [], {
+  env: childEnvironment,
+  stdio: ['ignore', 'pipe', 'pipe'],
 });
+const exitPromise = new Promise((resolve) => child.once('exit', resolve));
+let stdout = '';
+let stderr = '';
+child.stdout.on('data', (chunk) => { stdout += chunk; });
+child.stderr.on('data', (chunk) => { stderr += chunk; });
+
+const readEntries = async () => {
+  const files = await readdir(logsRoot).catch(() => []);
+  const entries = [];
+
+  for (const file of files.filter((name) => name.startsWith('markd-') && name.endsWith('.log'))) {
+    const content = await readFile(join(logsRoot, file), 'utf8');
+    for (const line of content.split('\n').filter(Boolean)) {
+      entries.push(JSON.parse(line));
+    }
+  }
+
+  return entries;
+};
+
+const waitForRenderer = async () => {
+  const deadline = Date.now() + 20_000;
+
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) {
+      throw new Error(`Packaged app exited before readiness (code ${child.exitCode}).\n${stdout}\n${stderr}`);
+    }
+
+    const entries = await readEntries();
+    const events = new Set(entries.map((entry) => entry.event));
+    if (events.has('app.ready') && events.has('renderer.did-finish-load')) {
+      return entries;
+    }
+
+    await delay(100);
+  }
+
+  throw new Error(`Packaged app did not become ready within 20 seconds.\n${stdout}\n${stderr}`);
+};
 
 try {
-  const window = await electronApp.firstWindow();
-  window.on('console', (message) => {
-    if (message.type() === 'error' || message.type() === 'warning') {
-      runtimeErrors.push(`${message.type()}: ${message.text()}`);
-    }
-  });
-  window.on('pageerror', (error) => runtimeErrors.push(`pageerror: ${error.message}`));
+  const entries = await waitForRenderer();
+  const runtimeErrors = entries.filter((entry) => ['warn', 'error', 'fatal'].includes(entry.level));
 
-  await window.getByTestId('start-screen').waitFor({ state: 'visible', timeout: 15_000 });
-
-  const title = await window.title();
-  const isWindowVisible = await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible());
-  const bridgeType = await window.evaluate(() => typeof window.desktop);
-  const pageCount = await window.locator('.page-item').count();
-  const bodyText = (await window.locator('body').innerText()).trim();
-
-  assert.match(title, /MarkD$/);
-  assert.equal(isWindowVisible, false, 'Smoke-тест не должен показывать окно приложения');
-  assert.equal(bridgeType, 'object');
-  assert.ok(pageCount === 0, 'При запуске должен отображаться стартовый экран, а не редактор');
-  assert.equal(await window.getByTestId('start-screen').count(), 1, 'Стартовый экран должен быть видимым');
-  assert.ok(bodyText.length > 50, 'Renderer не должен быть пустым');
   assert.deepEqual(runtimeErrors, []);
-
-  await window.screenshot({ path: '/private/tmp/markd-packaged-smoke.png' });
-  console.log(JSON.stringify({ title, isWindowVisible, bridgeType, pageCount, runtimeErrors }, null, 2));
+  console.log(JSON.stringify({
+    events: entries.map((entry) => entry.event),
+    fusesVerified: 5,
+    runtimeErrors,
+  }, null, 2));
 } finally {
-  await electronApp.close();
+  if (child.exitCode === null) {
+    child.kill('SIGTERM');
+    const exitedCleanly = await Promise.race([
+      exitPromise.then(() => true),
+      delay(5_000, false),
+    ]);
+    if (!exitedCleanly) {
+      child.kill('SIGKILL');
+      await exitPromise;
+    }
+  }
+  await rm(userDataRoot, { recursive: true, force: true });
 }

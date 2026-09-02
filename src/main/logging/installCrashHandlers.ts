@@ -30,6 +30,9 @@ const renderGoneContext = (details: RenderProcessGoneDetails) => ({
 });
 
 export const installWindowLogging = (window: BrowserWindow): void => {
+  window.webContents.on('did-finish-load', () => {
+    writeLog('info', 'renderer.did-finish-load');
+  });
   window.webContents.on('render-process-gone', (_event, details) => {
     writeLog('fatal', 'renderer.process-gone', undefined, renderGoneContext(details));
   });

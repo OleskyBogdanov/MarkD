@@ -5,6 +5,7 @@ import type { RenderMode } from '@/renderer/domain/model';
 type EditorOverlayProps = {
   mode: RenderMode;
   selected: boolean;
+  controlsInside?: boolean;
   moveLabel: string;
   resizeLabel?: string;
   moveTestId?: string;
@@ -17,6 +18,7 @@ type EditorOverlayProps = {
 export const EditorOverlay = ({
   mode,
   selected,
+  controlsInside = false,
   moveLabel,
   resizeLabel = 'Изменить размер элемента',
   moveTestId,
@@ -28,7 +30,11 @@ export const EditorOverlay = ({
   if (mode !== 'edit') return null;
 
   return (
-    <div className="editor-overlay" data-testid="editor-overlay" aria-hidden={!selected && !hasOverflow}>
+    <div
+      className={`editor-overlay${selected ? ' selected' : ''}${controlsInside ? ' controls-inside' : ''}`}
+      data-testid="editor-overlay"
+      aria-hidden={!selected && !hasOverflow}
+    >
       {selected ? (
         <>
           <button

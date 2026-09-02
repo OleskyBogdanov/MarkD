@@ -4,7 +4,6 @@
     "lib": ["ES2022", "DOM"],
     "jsx": "react-jsx",
     "strict": true,
-    "esModuleInterop": false,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "allowJs": false,
@@ -16,9 +15,8 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
     "noPropertyAccessFromIndexSignature": true,
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   }
 }

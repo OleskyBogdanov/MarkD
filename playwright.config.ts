@@ -1,4 +1,8 @@
 import { defineConfig } from '@playwright/test';
+import process from 'node:process';
+
+// Playwright forces colored child-process output; inheriting NO_COLOR makes Node warn.
+delete process.env.NO_COLOR;
 
 export default defineConfig({
   testDir: './e2e',

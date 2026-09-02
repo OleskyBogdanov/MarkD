@@ -10,7 +10,9 @@ output/
 test-results/
 coverage/
 playwright-report/
+tmp/
 
 *.log
 *.tmp
 .codebase-memory/
+.codex/

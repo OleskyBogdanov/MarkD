@@ -6,6 +6,9 @@ export const DEFAULT_LAYER_ID = 'layer_main';
 export const ICON_NAMES = ['briefcase', 'building', 'calendar', 'hash', 'mail', 'map-pin', 'phone', 'user'] as const;
 export const iconNameSchema = z.enum(ICON_NAMES);
 export const textAlignSchema = z.enum(['left', 'center', 'right']);
+export const verticalAlignSchema = z.enum(['top', 'middle', 'bottom']);
+export const shapeKindSchema = z.enum(['rectangle', 'ellipse', 'triangle', 'line']);
+export const strokeStyleSchema = z.enum(['solid', 'dashed', 'dotted']);
 export const colorSchema = z.string().regex(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/, 'Ожидается HEX-цвет');
 
 export const rectSchema = z.object({
@@ -62,11 +65,14 @@ export const tableStyleSchema = z.object({
   cellPadding: z.number().min(0).max(24).default(7),
   rowHeight: z.number().min(24).max(96).default(34),
   fontSize: z.number().min(8).max(24).default(11),
-  verticalAlign: z.enum(['top', 'middle', 'bottom']).default('middle'),
+  verticalAlign: verticalAlignSchema.default('middle'),
   wrapText: z.boolean().default(true),
   align: textAlignSchema.default('left'),
-  columnAlign: z.record(textAlignSchema).default({}),
-  rowAlign: z.record(textAlignSchema).default({})
+  columnAlign: z.record(z.string(), textAlignSchema).default({}),
+  rowAlign: z.record(z.string(), textAlignSchema).default({}),
+  columnVerticalAlign: z.record(z.string(), verticalAlignSchema).default({}),
+  rowVerticalAlign: z.record(z.string(), verticalAlignSchema).default({}),
+  rowHeights: z.record(z.string(), z.number().min(24).max(96)).default({})
 });
 
 const commonElementShape = {
@@ -93,6 +99,7 @@ export const textFieldElementSchema = z.object({
   showPlaceholder: z.boolean().default(true),
   iconName: iconNameSchema.optional(),
   textAlign: textAlignSchema.default('left'),
+  verticalAlign: verticalAlignSchema.default('middle'),
   style: fieldStyleSchema
 });
 
@@ -114,6 +121,24 @@ export const imageElementSchema = z.object({
   assetId: z.string().min(1)
 });
 
+export const shapeStyleSchema = z.object({
+  fillColor: colorSchema.default('#dce9e3'),
+  fillTransparent: z.boolean().default(false),
+  strokeColor: colorSchema.default('#1e5b49'),
+  strokeWidth: z.number().min(0).max(12).default(2),
+  strokeStyle: strokeStyleSchema.default('solid'),
+  cornerRadius: z.number().min(0).max(100).default(0)
+});
+
+export const shapeElementSchema = z.object({
+  ...commonElementShape,
+  type: z.literal('shape'),
+  shape: shapeKindSchema,
+  style: shapeStyleSchema,
+  text: z.string().default(''),
+  textStyle: textStyleSchema.prefault({ align: 'center' })
+});
+
 export const tableCellSchema = z.object({
   id: z.string().min(1),
   text: z.string(),
@@ -129,7 +154,7 @@ export const tableSchema = z.object({
   pageHeader: z.string().default('Наименование'),
   showPageHeader: z.boolean().default(true),
   firstRowHeader: z.boolean().default(true),
-  style: tableStyleSchema.default({})
+  style: tableStyleSchema.prefault({})
 });
 
 export const elementSchema = z.discriminatedUnion('type', [
@@ -137,6 +162,7 @@ export const elementSchema = z.discriminatedUnion('type', [
   textFieldElementSchema,
   selectFieldElementSchema,
   imageElementSchema,
+  shapeElementSchema,
   tableSchema
 ]);
 
@@ -203,6 +229,15 @@ export const projectSchema = z.object({
         for (const rowId of Object.keys(element.style.rowAlign)) {
           if (!rowIds.has(rowId)) context.addIssue({ code: z.ZodIssueCode.custom, path: [...path, 'style', 'rowAlign', rowId], message: 'Строка не существует' });
         }
+        for (const columnId of Object.keys(element.style.columnVerticalAlign)) {
+          if (!columnIds.has(columnId)) context.addIssue({ code: z.ZodIssueCode.custom, path: [...path, 'style', 'columnVerticalAlign', columnId], message: 'Колонка не существует' });
+        }
+        for (const rowId of Object.keys(element.style.rowVerticalAlign)) {
+          if (!rowIds.has(rowId)) context.addIssue({ code: z.ZodIssueCode.custom, path: [...path, 'style', 'rowVerticalAlign', rowId], message: 'Строка не существует' });
+        }
+        for (const rowId of Object.keys(element.style.rowHeights)) {
+          if (!rowIds.has(rowId)) context.addIssue({ code: z.ZodIssueCode.custom, path: [...path, 'style', 'rowHeights', rowId], message: 'Строка не существует' });
+        }
       }
     });
   });
@@ -248,6 +283,8 @@ export const serializeProject = (project: KpProject): string => JSON.stringify(p
 
 export type IconName = z.infer<typeof iconNameSchema>;
 export type TextAlign = z.infer<typeof textAlignSchema>;
+export type VerticalAlign = z.infer<typeof verticalAlignSchema>;
+export type ShapeKind = z.infer<typeof shapeKindSchema>;
 export type KpLayer = z.infer<typeof layerSchema>;
 export type KpTableStyle = z.infer<typeof tableStyleSchema>;
 export type KpTableCell = z.infer<typeof tableCellSchema>;
@@ -258,6 +295,7 @@ export type KpTextFieldElement = z.infer<typeof textFieldElementSchema>;
 export type KpSelectOption = z.infer<typeof selectOptionSchema>;
 export type KpSelectFieldElement = z.infer<typeof selectFieldElementSchema>;
 export type KpImageElement = z.infer<typeof imageElementSchema>;
+export type KpShapeElement = z.infer<typeof shapeElementSchema>;
 export type KpTableElement = z.infer<typeof tableSchema>;
 export type KpElement = z.infer<typeof elementSchema>;
 export type KpPage = z.infer<typeof pageSchema>;

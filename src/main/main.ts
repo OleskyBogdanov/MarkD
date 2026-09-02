@@ -112,6 +112,12 @@ function configureMenu(): void {
       submenu: [
         { role: 'undo', label: 'Отменить' },
         { role: 'redo', label: 'Повторить' },
+        { type: 'separator' },
+        { role: 'cut', label: 'Вырезать' },
+        { role: 'copy', label: 'Копировать' },
+        { role: 'paste', label: 'Вставить' },
+        { role: 'selectAll', label: 'Выбрать всё' },
+        { type: 'separator' },
         {
           label: 'Новый документ',
           accelerator: 'CmdOrCtrl+N',

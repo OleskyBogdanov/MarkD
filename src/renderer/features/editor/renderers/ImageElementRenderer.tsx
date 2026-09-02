@@ -9,6 +9,8 @@ type ImageElementRendererProps = {
   rect: KpRect;
   scale: number;
   selected: boolean;
+  controlsInside: boolean;
+  fillsPage: boolean;
   onSelect: () => void;
   onMoveStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
@@ -21,16 +23,19 @@ export const ImageElementRenderer = ({
   rect,
   scale,
   selected,
+  controlsInside,
+  fillsPage,
   onSelect,
   onMoveStart,
   onResizeStart
 }: ImageElementRendererProps) => (
   <ElementFrame
-    className="image-element"
+    className={`image-element${fillsPage ? ' image-element-full-page' : ''}`}
     mode={mode}
     rect={rect}
     scale={scale}
     selected={selected}
+    controlsInside={controlsInside}
     testId="image-element"
     zIndex={element.zIndex}
     moveLabel="Переместить изображение"

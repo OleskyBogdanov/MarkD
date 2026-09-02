@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
 import { AlignCenter, AlignLeft, AlignRight, Bold, ChevronDown, ChevronUp, Italic, Plus, Trash2, X } from 'lucide-react';
-import { ICON_NAMES, type IconName, type KpRect, type TextAlign } from '@/renderer/domain/model';
+import { ICON_NAMES, type IconName, type KpRect, type TextAlign, type VerticalAlign } from '@/renderer/domain/model';
 import { ICON_LABELS } from '@/renderer/domain/iconRegistry';
 import { useEditorStore } from '@/renderer/store/useEditorStore';
 import { ColorControl } from '@/renderer/components/ui/ColorControl';
+import { BufferedTextarea } from '@/renderer/components/ui/BufferedTextControl';
+import { TextPlacementControl } from '@/renderer/components/ui/TextPlacementControl';
 
 type GeometryFieldsProps = {
   rect: KpRect;
@@ -100,6 +102,9 @@ export const Inspector = () => {
     updateTableStyle,
     updateTableColumnAlign,
     updateTableRowAlign,
+    updateTableColumnVerticalAlign,
+    updateTableRowVerticalAlign,
+    updateTableRowHeight,
     updateTableColumnWidth,
     moveTableColumn,
     moveTableRow,
@@ -110,6 +115,7 @@ export const Inspector = () => {
     addTableRow,
     updateText,
     updateTextStyle,
+    updateShape,
     updateTextField,
     updateSelectField,
     addSelectOption,
@@ -179,10 +185,10 @@ export const Inspector = () => {
         <div className="inspector-block">
           <label>
             Содержание
-            <textarea
+            <BufferedTextarea
               value={element.text}
               rows={5}
-              onChange={(event) => updateText(pageId, element.id, event.currentTarget.value)}
+              onCommit={(value) => updateText(pageId, element.id, value)}
             />
           </label>
 
@@ -274,7 +280,15 @@ export const Inspector = () => {
           </label>
           <label>
             Значение
-            <input value={element.value} onChange={(event) => updateTextField(pageId, element.id, { value: event.currentTarget.value })} />
+            <BufferedTextarea
+              className="text-field-value"
+              value={element.value}
+              rows={2}
+              onCommit={(value) => updateTextField(pageId, element.id, { value })}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) event.preventDefault();
+              }}
+            />
           </label>
           <label className="toggle-row">
             <input
@@ -308,7 +322,13 @@ export const Inspector = () => {
               onChange={(event) => updateTextField(pageId, element.id, { style: { fontSize: readNumber(event.currentTarget.value, element.style.fontSize) } })}
             />
           </label>
-          <AlignmentControl value={element.textAlign} onChange={(textAlign) => updateTextField(pageId, element.id, { textAlign })} />
+          <span className="inspector-field-label">Расположение текста</span>
+          <TextPlacementControl
+            horizontal={element.textAlign}
+            vertical={element.verticalAlign}
+            onHorizontalChange={(textAlign) => updateTextField(pageId, element.id, { textAlign })}
+            onVerticalChange={(verticalAlign) => updateTextField(pageId, element.id, { verticalAlign })}
+          />
         </div>
 
         <div className="inspector-section-label">Цвета</div>
@@ -414,9 +434,167 @@ export const Inspector = () => {
         <div className="inspector-section-label">Геометрия</div>
         <GeometryFields rect={element.rect} onChange={updateRect} />
 
+        <button
+          className="button button-outline fit-page-action"
+          type="button"
+          onClick={() => updateRect({
+            x: 0,
+            y: 0,
+            width: selectedElement.page.widthMm,
+            height: selectedElement.page.heightMm
+          })}
+        >
+          На весь лист
+        </button>
+
         <button className="danger-action" type="button" onClick={deleteSelected}>
           <Trash2 size={15} /> Удалить изображение
         </button>
+      </section>
+    );
+  }
+
+  if (element.type === 'shape') {
+    const isLine = element.shape === 'line';
+    return (
+      <section className="inspector-panel">
+        <div className="inspector-heading">
+          <span className="inspector-kicker">Элемент</span>
+          <h2>Фигура</h2>
+          <p>Форма, заливка, контур, текст и положение на листе.</p>
+        </div>
+
+        <div className="inspector-block">
+          <label>
+            Тип фигуры
+            <select value={element.shape} onChange={(event) => updateShape(pageId, element.id, { shape: event.currentTarget.value as typeof element.shape })}>
+              <option value="rectangle">Прямоугольник</option>
+              <option value="ellipse">Эллипс</option>
+              <option value="triangle">Треугольник</option>
+              <option value="line">Линия</option>
+            </select>
+          </label>
+          {element.shape === 'rectangle' ? (
+            <label>
+              Скругление, px
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={element.style.cornerRadius}
+                onChange={(event) => updateShape(pageId, element.id, {
+                  style: { cornerRadius: readNumber(event.currentTarget.value, element.style.cornerRadius) }
+                })}
+              />
+            </label>
+          ) : null}
+        </div>
+
+        {!isLine ? (
+          <>
+            <div className="inspector-section-label">Заливка</div>
+            <div className="color-grid">
+              <ColorControl label="Цвет заливки" value={element.style.fillColor} onChange={(fillColor) => updateShape(pageId, element.id, { style: { fillColor } })} />
+            </div>
+            <div className="inspector-block appearance-toggles">
+              <label className="toggle-row">
+                <input type="checkbox" checked={element.style.fillTransparent} onChange={(event) => updateShape(pageId, element.id, { style: { fillTransparent: event.currentTarget.checked } })} />
+                <span>Без заливки</span>
+              </label>
+            </div>
+          </>
+        ) : null}
+
+        <div className="inspector-section-label">Контур</div>
+        <div className="color-grid">
+          <ColorControl label={isLine ? 'Цвет линии' : 'Цвет контура'} value={element.style.strokeColor} onChange={(strokeColor) => updateShape(pageId, element.id, { style: { strokeColor } })} />
+        </div>
+        <div className="table-settings-grid shape-stroke-settings">
+          <label>
+            Толщина, px
+            <input type="number" min={0} max={12} step={0.5} value={element.style.strokeWidth} onChange={(event) => updateShape(pageId, element.id, { style: { strokeWidth: readNumber(event.currentTarget.value, element.style.strokeWidth) } })} />
+          </label>
+          <label>
+            Тип линии
+            <select value={element.style.strokeStyle} onChange={(event) => updateShape(pageId, element.id, { style: { strokeStyle: event.currentTarget.value as typeof element.style.strokeStyle } })}>
+              <option value="solid">Сплошная</option>
+              <option value="dashed">Штриховая</option>
+              <option value="dotted">Точечная</option>
+            </select>
+          </label>
+        </div>
+
+        {!isLine ? (
+          <>
+            <div className="inspector-section-label">Текст внутри</div>
+            <div className="inspector-block">
+              <label>
+                Содержание
+                <BufferedTextarea
+                  value={element.text}
+                  rows={4}
+                  placeholder="Дважды нажмите по фигуре или введите текст здесь"
+                  onCommit={(text) => updateShape(pageId, element.id, { text })}
+                />
+              </label>
+              <label>
+                Гарнитура
+                <select
+                  value={element.textStyle.fontFamily}
+                  onChange={(event) => updateShape(pageId, element.id, { textStyle: { fontFamily: event.currentTarget.value } })}
+                >
+                  <option value="Avenir Next, -apple-system, BlinkMacSystemFont, sans-serif">Avenir Next</option>
+                  <option value="Arial, -apple-system, sans-serif">Arial</option>
+                  <option value="Georgia, Times New Roman, serif">Georgia</option>
+                  <option value="Menlo, Monaco, monospace">Menlo</option>
+                </select>
+              </label>
+              <div className="type-controls">
+                <label>
+                  Размер, px
+                  <input
+                    type="number"
+                    value={element.textStyle.fontSize}
+                    min={8}
+                    max={72}
+                    onChange={(event) => updateShape(pageId, element.id, {
+                      textStyle: { fontSize: readNumber(event.currentTarget.value, element.textStyle.fontSize) }
+                    })}
+                  />
+                </label>
+                <div className="segmented-control" aria-label="Начертание текста фигуры">
+                  <button
+                    type="button"
+                    className={element.textStyle.bold ? 'active' : ''}
+                    aria-label="Полужирный"
+                    aria-pressed={element.textStyle.bold}
+                    title="Полужирный"
+                    onClick={() => updateShape(pageId, element.id, { textStyle: { bold: !element.textStyle.bold } })}
+                  >
+                    <Bold size={15} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className={element.textStyle.italic ? 'active' : ''}
+                    aria-label="Курсив"
+                    aria-pressed={element.textStyle.italic}
+                    title="Курсив"
+                    onClick={() => updateShape(pageId, element.id, { textStyle: { italic: !element.textStyle.italic } })}
+                  >
+                    <Italic size={15} aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+              <AlignmentControl value={element.textStyle.align} onChange={(align) => updateShape(pageId, element.id, { textStyle: { align } })} />
+              <ColorControl label="Цвет текста" value={element.textStyle.color} onChange={(color) => updateShape(pageId, element.id, { textStyle: { color } })} />
+            </div>
+          </>
+        ) : null}
+
+        <div className="inspector-section-label">Геометрия</div>
+        <GeometryFields rect={element.rect} onChange={updateRect} />
+        <button className="danger-action" type="button" onClick={deleteSelected}><Trash2 size={15} aria-hidden="true" /> Удалить фигуру</button>
       </section>
     );
   }
@@ -455,8 +633,14 @@ export const Inspector = () => {
             />
             <span>Первая строка — шапка таблицы</span>
           </label>
-          <span className="inspector-field-label">Выравнивание всей таблицы</span>
-          <AlignmentControl value={element.style.align} onChange={(align) => updateTableStyle(pageId, element.id, { align })} />
+          <span className="inspector-field-label">Расположение текста по умолчанию</span>
+          <TextPlacementControl
+            label="Расположение текста во всей таблице"
+            horizontal={element.style.align}
+            vertical={element.style.verticalAlign}
+            onHorizontalChange={(align) => updateTableStyle(pageId, element.id, { align })}
+            onVerticalChange={(verticalAlign) => updateTableStyle(pageId, element.id, { verticalAlign })}
+          />
         </div>
 
         <div className="inspector-section-label">Текст и ячейки</div>
@@ -472,12 +656,6 @@ export const Inspector = () => {
           <label>
             Отступ ячейки, px
             <input type="number" min={0} max={24} value={element.style.cellPadding} onChange={(event) => updateTableStyle(pageId, element.id, { cellPadding: readNumber(event.currentTarget.value, element.style.cellPadding) })} />
-          </label>
-          <label>
-            По вертикали
-            <select value={element.style.verticalAlign} onChange={(event) => updateTableStyle(pageId, element.id, { verticalAlign: event.currentTarget.value as typeof element.style.verticalAlign })}>
-              <option value="top">Сверху</option><option value="middle">По центру</option><option value="bottom">Снизу</option>
-            </select>
           </label>
         </div>
         <div className="inspector-block appearance-toggles">
@@ -541,6 +719,9 @@ export const Inspector = () => {
               <label>Выравнивание<select aria-label={`Выравнивание колонки ${index + 1}`} value={element.style.columnAlign[columnId] ?? ''} onChange={(event) => updateTableColumnAlign(pageId, element.id, columnId, (event.currentTarget.value || null) as TextAlign | null)}>
                   <option value="">Как у таблицы</option><option value="left">Слева</option><option value="center">По центру</option><option value="right">Справа</option>
                 </select></label>
+              <label>По вертикали<select aria-label={`Вертикальное выравнивание колонки ${index + 1}`} value={element.style.columnVerticalAlign[columnId] ?? ''} onChange={(event) => updateTableColumnVerticalAlign(pageId, element.id, columnId, (event.currentTarget.value || null) as VerticalAlign | null)}>
+                  <option value="">Как у таблицы</option><option value="top">Сверху</option><option value="middle">По центру</option><option value="bottom">Снизу</option>
+                </select></label>
             </div>
           ))}
         </div>
@@ -558,16 +739,16 @@ export const Inspector = () => {
               <label>Выравнивание<select aria-label={`Выравнивание строки ${index + 1}`} value={element.style.rowAlign[row.id] ?? ''} onChange={(event) => updateTableRowAlign(pageId, element.id, row.id, (event.currentTarget.value || null) as TextAlign | null)}>
                   <option value="">Колонка / таблица</option><option value="left">Слева</option><option value="center">По центру</option><option value="right">Справа</option>
                 </select></label>
+              <label>Высота, px<input aria-label={`Высота строки ${index + 1}`} type="number" min={24} max={96} step={1} value={element.style.rowHeights[row.id] ?? element.style.rowHeight} onChange={(event) => updateTableRowHeight(pageId, element.id, row.id, readNumber(event.currentTarget.value, element.style.rowHeight))} /></label>
+              <label>По вертикали<select aria-label={`Вертикальное выравнивание строки ${index + 1}`} value={element.style.rowVerticalAlign[row.id] ?? ''} onChange={(event) => updateTableRowVerticalAlign(pageId, element.id, row.id, (event.currentTarget.value || null) as VerticalAlign | null)}>
+                  <option value="">Колонка / таблица</option><option value="top">Сверху</option><option value="middle">По центру</option><option value="bottom">Снизу</option>
+                </select></label>
             </div>
           ))}
         </div>
 
         <div className="inspector-section-label">Геометрия</div>
-        <GeometryFields rect={element.rect} onChange={updateRect} showHeight={false} />
-        <div className="computed-value">
-          <span>Расчётная высота</span>
-          <strong>{element.rect.height.toFixed(1)} мм</strong>
-        </div>
+        <GeometryFields rect={element.rect} onChange={updateRect} />
 
         <div className="inspector-actions inspector-actions-stack">
           <button type="button" onClick={() => addTableRow(pageId, element.id)}>Добавить строку</button>

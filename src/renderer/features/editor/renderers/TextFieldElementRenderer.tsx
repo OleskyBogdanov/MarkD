@@ -1,7 +1,15 @@
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import type { KpRect, KpTextFieldElement, RenderMode } from '@/renderer/domain/model';
 import { DOCUMENT_ICON_REGISTRY } from '@/renderer/domain/iconRegistry';
 import { ElementFrame } from './ElementFrame';
+import { BufferedTextarea } from '@/renderer/components/ui/BufferedTextControl';
+import { useAutoSizeTextarea } from '@/renderer/components/ui/useAutoSizeTextarea';
+
+const verticalContentAlign = {
+  top: 'start',
+  middle: 'center',
+  bottom: 'end'
+} as const;
 
 type TextFieldElementRendererProps = {
   element: KpTextFieldElement;
@@ -30,6 +38,7 @@ export const TextFieldElementRenderer = ({
 }: TextFieldElementRendererProps) => {
   const Icon = element.iconName ? DOCUMENT_ICON_REGISTRY[element.iconName] : null;
   const inputId = `canvas-${element.id}`;
+  const autoSize = useAutoSizeTextarea();
   const style = {
     '--field-font-size': `${element.style.fontSize * zoom}px`,
     '--field-label-color': element.style.labelColor,
@@ -41,6 +50,9 @@ export const TextFieldElementRenderer = ({
     '--field-radius': `${element.style.borderRadius * zoom}px`
   } as React.CSSProperties;
   const visiblePlaceholder = element.showPlaceholder ? element.placeholder : '';
+  const preventPlainEnter = (event: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) event.preventDefault();
+  };
 
   return (
     <ElementFrame
@@ -67,19 +79,32 @@ export const TextFieldElementRenderer = ({
         <div className="field-control">
           {Icon ? <span className="field-leading" aria-hidden="true"><Icon /></span> : null}
           {mode === 'edit' ? (
-            <input
+            <BufferedTextarea
+              ref={autoSize.ref}
               id={inputId}
               aria-label={element.label || 'Текстовое поле'}
               value={element.value}
               placeholder={visiblePlaceholder}
-              style={{ textAlign: element.textAlign }}
-              onChange={(event) => onValueChange(event.currentTarget.value)}
+              rows={1}
+              style={{
+                alignSelf: verticalContentAlign[element.verticalAlign],
+                textAlign: element.textAlign
+              }}
+              onCommit={onValueChange}
+              onInput={autoSize.resize}
+              onKeyDown={preventPlainEnter}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => event.stopPropagation()}
               onFocus={onSelect}
             />
           ) : (
-            <div className={`field-presentation ${!element.value && visiblePlaceholder ? 'is-placeholder' : ''}`} style={{ textAlign: element.textAlign }}>
+            <div
+              className={`field-presentation text-field-presentation ${!element.value && visiblePlaceholder ? 'is-placeholder' : ''}`}
+              style={{
+                alignContent: verticalContentAlign[element.verticalAlign],
+                textAlign: element.textAlign
+              }}
+            >
               {element.value || visiblePlaceholder || '\u00a0'}
             </div>
           )}

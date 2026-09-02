@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { KpRect, KpTextElement, RenderMode } from '@/renderer/domain/model';
 import { ElementFrame } from './ElementFrame';
+import { BufferedTextarea } from '@/renderer/components/ui/BufferedTextControl';
 
 type TextElementRendererProps = {
   element: KpTextElement;
@@ -66,13 +67,13 @@ export const TextElementRenderer = ({
       onResizeStart={onResizeStart}
     >
       {mode === 'edit' ? (
-        <textarea
+        <BufferedTextarea
           ref={contentRef as React.RefObject<HTMLTextAreaElement>}
           className="document-text editor-text"
           aria-label="Текст на странице"
           value={element.text}
           style={contentStyle}
-          onChange={(event) => onChange(event.currentTarget.value)}
+          onCommit={onChange}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
           onFocus={onSelect}

@@ -14,12 +14,17 @@ export {
   schemaVersion,
   selectFieldElementSchema,
   selectOptionSchema,
+  shapeElementSchema,
+  shapeKindSchema,
+  shapeStyleSchema,
+  strokeStyleSchema,
   serializeProject,
   tableCellSchema,
   tableRowSchema,
   tableSchema,
   tableStyleSchema,
   textAlignSchema,
+  verticalAlignSchema,
   textElementSchema,
   textFieldElementSchema,
   textStyleSchema
@@ -37,13 +42,16 @@ export type {
   KpRect,
   KpSelectFieldElement,
   KpSelectOption,
+  KpShapeElement,
   KpTableCell,
   KpTableElement,
   KpTableStyle,
   KpTableRow,
   KpTextElement,
   KpTextFieldElement,
-  TextAlign
+  ShapeKind,
+  TextAlign,
+  VerticalAlign
 } from '@/shared/projectSchema';
 
 import type { KpPageBackground } from '@/shared/projectSchema';
@@ -76,6 +84,23 @@ export const calculateTableHeightMm = (
   rowHeightPx = 34
 ): number =>
   (showPageHeader ? TABLE_HEADER_HEIGHT_MM : 0) + (rows * TABLE_ROW_HEIGHT_MM * (rowHeightPx / 34)) + 4;
+
+export const calculateTableRowsHeightMm = (
+  rowHeightsPx: number[],
+  showPageHeader = true
+): number =>
+  (showPageHeader ? TABLE_HEADER_HEIGHT_MM : 0) +
+  rowHeightsPx.reduce((sum, rowHeightPx) => sum + TABLE_ROW_HEIGHT_MM * (rowHeightPx / 34), 0) +
+  4;
+
+export const calculateTableRowHeightPx = (
+  tableHeightMm: number,
+  rows: number,
+  showPageHeader = true
+): number => {
+  const fixedHeightMm = (showPageHeader ? TABLE_HEADER_HEIGHT_MM : 0) + 4;
+  return (Math.max(0, tableHeightMm - fixedHeightMm) * 34) / (Math.max(1, rows) * TABLE_ROW_HEIGHT_MM);
+};
 
 export const estimateMaxRowsOnPage = (
   pageHeightMm: number,

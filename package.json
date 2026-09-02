@@ -1,8 +1,9 @@
 {
   "name": "markd",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
+  "packageManager": "npm@11.19.0",
   "main": "dist/main/main/main.js",
   "description": "MarkD — редактор переносимых документов для macOS",
   "scripts": {
@@ -18,7 +19,8 @@
     "dev": "npm run build:main && npm run build:preload && concurrently \"vite --host 127.0.0.1 --port 40173 --strictPort\" \"cross-env NODE_ENV=development VITE_DEV_SERVER_URL=http://127.0.0.1:40173 node scripts/run-electron.mjs\"",
     "package:mac": "npm run build && node scripts/package-mac.mjs && npm run smoke:app",
     "package:win": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win nsis --x64 --publish never",
-    "smoke:app": "node scripts/smoke-packaged-app.mjs"
+    "smoke:app": "node scripts/smoke-packaged-app.mjs",
+    "deps:deprecated": "node scripts/check-deprecated-dependencies.mjs"
   },
   "keywords": [
     "electron",
@@ -29,49 +31,52 @@
   ],
   "author": "Codex",
   "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24.19.0"
+  },
   "dependencies": {
-    "immer": "^10.1.1",
-    "lucide-react": "^0.542.0",
-    "motion": "^10.18.0",
-    "nanoid": "^5.0.9",
-    "pdfjs-dist": "^4.7.76",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-moveable": "^0.56.0",
-    "zod": "^3.24.2",
-    "zundo": "^2.0.6",
-    "zustand": "^5.0.4"
+    "lucide-react": "1.39.0",
+    "nanoid": "6.0.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.5.4",
+    "zustand": "5.0.15"
   },
   "devDependencies": {
-    "@electron/fuses": "^1.8.0",
-    "@eslint/js": "^9.12.0",
-    "@playwright/experimental-ct-react": "^1.48.0",
-    "@playwright/test": "^1.48.0",
-    "@types/node": "^22.10.2",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.4",
-    "@typescript-eslint/eslint-plugin": "^8.8.0",
-    "@typescript-eslint/parser": "^8.8.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "@vitest/ui": "^2.1.8",
-    "concurrently": "^9.2.0",
-    "cross-env": "^7.0.3",
-    "electron": "^33.2.0",
-    "electron-builder": "^24.13.3",
-    "eslint": "^9.14.0",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-react-hooks": "^5.1.0",
-    "eslint-plugin-react-refresh": "^0.4.16",
-    "playwright": "^1.48.0",
-    "sass": "^1.79.4",
-    "typescript": "^5.5.4",
-    "vite": "^5.4.0",
-    "vitest": "^2.1.8"
+    "@electron/fuses": "2.1.2",
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.62.1",
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@typescript-eslint/eslint-plugin": "8.69.0",
+    "@typescript-eslint/parser": "8.69.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "concurrently": "10.0.5",
+    "cross-env": "10.1.0",
+    "electron": "44.1.1",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.28.2",
+    "eslint": "10.9.1",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-react-refresh": "0.5.5",
+    "playwright": "1.62.1",
+    "sass": "1.103.1",
+    "typescript": "6.0.3",
+    "vite": "8.2.2",
+    "vitest": "4.1.11"
   },
   "build": {
     "appId": "com.markd.desktop",
     "productName": "MarkD",
     "asar": true,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    },
     "files": [
       "dist/main/**/*",
       "dist/preload/**/*",
@@ -119,5 +124,12 @@
     "extraMetadata": {
       "main": "dist/main/main/main.js"
     }
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "electron-winstaller@5.4.0": true,
+    "@parcel/watcher@2.6.0": true,
+    "fsevents@2.3.2": true,
+    "fsevents@2.3.3": true
   }
 }

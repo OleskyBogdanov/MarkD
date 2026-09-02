@@ -1,0 +1,52 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "dependencyDashboard": true,
+  "rangeStrategy": "pin",
+  "schedule": ["before 8am on monday"],
+  "packageRules": [
+    {
+      "groupName": "React",
+      "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"]
+    },
+    {
+      "groupName": "Vite toolchain",
+      "matchPackageNames": ["vite", "vitest", "@vitejs/plugin-react"]
+    },
+    {
+      "groupName": "Playwright",
+      "matchPackageNames": ["playwright", "@playwright/test"]
+    },
+    {
+      "groupName": "TypeScript and ESLint",
+      "matchPackageNames": [
+        "typescript",
+        "@typescript-eslint/eslint-plugin",
+        "@typescript-eslint/parser",
+        "eslint",
+        "@eslint/js",
+        "eslint-plugin-react-hooks",
+        "eslint-plugin-react-refresh"
+      ],
+      "automerge": false
+    },
+    {
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<7"
+    },
+    {
+      "groupName": "Electron runtime",
+      "matchPackageNames": ["electron", "@types/node"],
+      "automerge": false
+    },
+    {
+      "matchPackageNames": ["@types/node"],
+      "allowedVersions": "<25"
+    },
+    {
+      "matchPackageNames": ["electron-builder"],
+      "automerge": false,
+      "ignoreUnstable": true
+    }
+  ]
+}

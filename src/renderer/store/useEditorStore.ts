@@ -8,6 +8,7 @@ import {
   KpPage,
   KpAsset,
   KpRect,
+  KpShapeElement,
   KpBackground,
   KpTextElement,
   KpTextFieldElement,
@@ -17,11 +18,19 @@ import {
   KpTableElement,
   KpTableStyle,
   TextAlign,
+  VerticalAlign,
+  ShapeKind,
   PAGE_MARGIN_MM,
   MIN_ELEMENT_MM_SIZE,
   clamp,
   calculateTableHeightMm,
-  projectSchema
+  calculateTableRowsHeightMm,
+  calculateTableRowHeightPx,
+  projectSchema,
+  fieldStyleSchema,
+  tableStyleSchema,
+  shapeStyleSchema,
+  textStyleSchema
 } from '@/renderer/domain/model';
 
 const HISTORY_LIMIT = 100;
@@ -31,17 +40,25 @@ const clampMm = (value: number, min: number, max: number): number => clamp(value
 const clampText = (text: string): string => text.slice(0, 20_000).replace(/\r/g, '');
 
 type MutationResult = boolean | void;
+type HistoryGroup = { key: string; updatedAt: number };
 
 export type KpSelection =
   | { type: 'none' }
   | { type: 'element'; elementId: string; pageId: string };
 
-type TextFieldUpdate = Partial<Pick<KpTextFieldElement, 'label' | 'showLabel' | 'value' | 'placeholder' | 'showPlaceholder' | 'iconName' | 'textAlign'>> & {
+type ElementStackPosition = 'front' | 'back';
+
+type TextFieldUpdate = Partial<Pick<KpTextFieldElement, 'label' | 'showLabel' | 'value' | 'placeholder' | 'showPlaceholder' | 'iconName' | 'textAlign' | 'verticalAlign'>> & {
   style?: Partial<KpTextFieldElement['style']>;
 };
 
 type SelectFieldUpdate = Partial<Pick<KpSelectFieldElement, 'label' | 'placeholder' | 'selectedOptionId'>> & {
   style?: Partial<KpSelectFieldElement['style']>;
+};
+
+type ShapeUpdate = Partial<Pick<KpShapeElement, 'shape' | 'text'>> & {
+  style?: Partial<KpShapeElement['style']>;
+  textStyle?: Partial<KpShapeElement['textStyle']>;
 };
 
 export type EditorState = {
@@ -52,6 +69,7 @@ export type EditorState = {
   redoStack: KpProject[];
   zoom: number;
   activeLayerId: string;
+  historyGroup: HistoryGroup | null;
 
   setProject: (project: KpProject) => void;
   resetProject: () => void;
@@ -62,12 +80,14 @@ export type EditorState = {
   addTextField: (pageId: string) => void;
   addSelectField: (pageId: string) => void;
   addTable: (pageId: string) => void;
-  addImage: (pageId: string, assetId: string) => void;
+  addImage: (pageId: string, assetId: string, center?: { x: number; y: number }) => void;
+  addShape: (pageId: string, shape: ShapeKind) => void;
   addAsset: (asset: KpAsset) => void;
   select: (selection: KpSelection) => void;
   updateElementRect: (pageId: string, elementId: string, rect: KpRect) => void;
   updateText: (pageId: string, elementId: string, text: string) => void;
   updateTextStyle: (pageId: string, elementId: string, style: Partial<KpTextElement['style']>) => void;
+  updateShape: (pageId: string, elementId: string, patch: ShapeUpdate) => void;
   updateTextField: (pageId: string, elementId: string, patch: TextFieldUpdate) => void;
   updateSelectField: (pageId: string, elementId: string, patch: SelectFieldUpdate) => void;
   addSelectOption: (pageId: string, elementId: string) => void;
@@ -81,9 +101,13 @@ export type EditorState = {
   updateTableHeader: (pageId: string, tableId: string, header: string) => void;
   updateTableSettings: (pageId: string, tableId: string, settings: Partial<Pick<KpTableElement, 'showPageHeader' | 'firstRowHeader'>>) => void;
   updateTableCell: (pageId: string, tableId: string, rowId: string, columnId: string, text: string) => void;
-  updateTableStyle: (pageId: string, tableId: string, style: Partial<Omit<KpTableStyle, 'columnAlign' | 'rowAlign'>>) => void;
+  updateTableStyle: (pageId: string, tableId: string, style: Partial<Omit<KpTableStyle, 'columnAlign' | 'rowAlign' | 'columnVerticalAlign' | 'rowVerticalAlign' | 'rowHeights'>>) => void;
   updateTableColumnAlign: (pageId: string, tableId: string, columnId: string, align: TextAlign | null) => void;
   updateTableRowAlign: (pageId: string, tableId: string, rowId: string, align: TextAlign | null) => void;
+  updateTableColumnVerticalAlign: (pageId: string, tableId: string, columnId: string, align: VerticalAlign | null) => void;
+  updateTableRowVerticalAlign: (pageId: string, tableId: string, rowId: string, align: VerticalAlign | null) => void;
+  updateTableRowHeight: (pageId: string, tableId: string, rowId: string, heightPx: number) => void;
+  resizeTableColumnBoundary: (pageId: string, tableId: string, columnId: string, widthMm: number) => void;
   updateTableColumnWidth: (pageId: string, tableId: string, columnId: string, widthMm: number) => void;
   moveTableColumn: (pageId: string, tableId: string, columnId: string, direction: -1 | 1) => void;
   moveTableRow: (pageId: string, tableId: string, rowId: string, direction: -1 | 1) => void;
@@ -95,6 +119,7 @@ export type EditorState = {
   setLayerLocked: (layerId: string, locked: boolean) => void;
   setActiveLayer: (layerId: string) => void;
   moveElementToLayer: (pageId: string, elementId: string, layerId: string) => void;
+  setElementStackPosition: (pageId: string, elementId: string, position: ElementStackPosition) => void;
   updatePageBackground: (pageId: string, background: KpBackground) => void;
   deleteElement: (pageId: string, elementId: string) => void;
   deleteSelected: () => void;
@@ -104,20 +129,52 @@ export type EditorState = {
   setDirty: (isDirty: boolean) => void;
 };
 
+const rectsOverlap = (first: KpRect, second: KpRect, gap = 4): boolean =>
+  first.x < second.x + second.width + gap &&
+  first.x + first.width + gap > second.x &&
+  first.y < second.y + second.height + gap &&
+  first.y + first.height + gap > second.y;
+
+const centeredRect = (
+  page: KpPage,
+  width: number,
+  height: number,
+  preferredCenter?: { x: number; y: number }
+): KpRect => {
+  const centerX = preferredCenter?.x ?? page.widthMm / 2;
+  const centerY = preferredCenter?.y ?? page.heightMm / 2;
+  const maxX = Math.max(PAGE_MARGIN_MM, page.widthMm - PAGE_MARGIN_MM - width);
+  const maxY = Math.max(PAGE_MARGIN_MM, page.heightMm - PAGE_MARGIN_MM - height);
+  const makeRect = (x: number, y: number): KpRect => ({
+    x: clampMm(x - width / 2, PAGE_MARGIN_MM, maxX),
+    y: clampMm(y - height / 2, PAGE_MARGIN_MM, maxY),
+    width,
+    height
+  });
+
+  if (preferredCenter) return makeRect(centerX, centerY);
+
+  const horizontalOffsets = [0, -(width + 8) / 2, (width + 8) / 2, -55, 55];
+  const verticalOffsets = Array.from({ length: 19 }, (_, index) => (index - 9) * 8);
+  const offsets = horizontalOffsets
+    .flatMap((x) => verticalOffsets.map((y) => ({ x, y, distance: Math.abs(x) + Math.abs(y) })))
+    .sort((first, second) => first.distance - second.distance || Math.abs(first.y) - Math.abs(second.y));
+
+  for (const offset of offsets) {
+    const candidate = makeRect(centerX + offset.x, centerY + offset.y);
+    if (!page.elements.some((element) => rectsOverlap(candidate, element.rect))) return candidate;
+  }
+
+  return makeRect(centerX, centerY);
+};
+
 const makeDefaultTextElement = (page: KpPage, layerId: string) => {
-  const textBottom = page.elements
-    .filter((element) => element.type !== 'table')
-    .reduce((bottom, element) => Math.max(bottom, element.rect.y + element.rect.height), PAGE_MARGIN_MM);
-  const tableTop = page.elements
-    .filter((element) => element.type === 'table')
-    .reduce((top, element) => Math.min(top, element.rect.y), page.heightMm - PAGE_MARGIN_MM);
   const height = 26;
-  const nextY = clampMm(textBottom + 8, PAGE_MARGIN_MM, Math.max(PAGE_MARGIN_MM, tableTop - height - 8));
 
   return {
   id: `el_${nanoid(12)}`,
   type: 'text' as const,
-  rect: { x: 16, y: nextY, width: 178, height },
+  rect: centeredRect(page, 178, height),
   text: 'Новый текст',
   style: {
     fontFamily: 'Avenir Next, -apple-system, BlinkMacSystemFont, sans-serif',
@@ -154,21 +211,10 @@ const defaultFieldStyle = {
   borderVisible: true
 };
 
-const nextElementY = (page: KpPage, height: number): number => {
-  const contentBottom = page.elements
-    .filter((element) => element.type !== 'table')
-    .reduce((bottom, element) => Math.max(bottom, element.rect.y + element.rect.height), PAGE_MARGIN_MM);
-  const tableTop = page.elements
-    .filter((element) => element.type === 'table')
-    .reduce((top, element) => Math.min(top, element.rect.y), page.heightMm - PAGE_MARGIN_MM);
-
-  return clampMm(contentBottom + 8, PAGE_MARGIN_MM, Math.max(PAGE_MARGIN_MM, tableTop - height - 8));
-};
-
 const makeDefaultTextFieldElement = (page: KpPage, layerId: string): KpTextFieldElement => ({
   id: `field_${nanoid(10)}`,
   type: 'textField',
-  rect: { x: 16, y: nextElementY(page, 22), width: 86, height: 22 },
+  rect: centeredRect(page, 86, 22),
   label: 'Контактное лицо',
   showLabel: true,
   value: '',
@@ -176,6 +222,7 @@ const makeDefaultTextFieldElement = (page: KpPage, layerId: string): KpTextField
   showPlaceholder: true,
   iconName: 'user',
   textAlign: 'left',
+  verticalAlign: 'middle',
   style: { ...defaultFieldStyle },
   layerId,
   zIndex: page.elements.length
@@ -184,7 +231,7 @@ const makeDefaultTextFieldElement = (page: KpPage, layerId: string): KpTextField
 const makeDefaultSelectFieldElement = (page: KpPage, layerId: string): KpSelectFieldElement => ({
   id: `select_${nanoid(10)}`,
   type: 'selectField',
-  rect: { x: 108, y: nextElementY(page, 22), width: 86, height: 22 },
+  rect: centeredRect(page, 86, 22),
   label: 'Тариф',
   placeholder: 'Выберите вариант',
   options: [
@@ -218,13 +265,18 @@ const defaultTableStyle: KpTableStyle = {
   wrapText: true,
   align: 'left',
   columnAlign: {},
-  rowAlign: {}
+  rowAlign: {},
+  columnVerticalAlign: {},
+  rowVerticalAlign: {},
+  rowHeights: {}
 };
 
-const makeDefaultTableElement = (y = 152, layerId = DEFAULT_LAYER_ID): KpTableElement => ({
+const makeDefaultTableElement = (page?: KpPage, layerId = DEFAULT_LAYER_ID): KpTableElement => ({
   id: `table_${nanoid(10)}`,
   type: 'table' as const,
-  rect: { x: 16, y, width: 178, height: calculateTableHeightMm(3, 1) },
+  rect: page
+    ? centeredRect(page, 178, calculateTableHeightMm(3, 1))
+    : { x: 16, y: 152, width: 178, height: calculateTableHeightMm(3, 1) },
   columns: [`col_${nanoid(8)}-1`, `col_${nanoid(8)}-2`, `col_${nanoid(8)}-3`],
   rows: [
     {
@@ -297,15 +349,22 @@ const elementIsEditable = (state: Pick<EditorState, 'project' | 'activeLayerId'>
 const findTable = (page: KpPage | undefined, tableId: string): KpTableElement | undefined =>
   page?.elements.find((candidate): candidate is KpTableElement => candidate.type === 'table' && candidate.id === tableId);
 
+const tableRowHeights = (table: KpTableElement): number[] =>
+  table.rows.map((row) => table.style.rowHeights[row.id] ?? table.style.rowHeight);
+
 const calculateTableElementHeightMm = (table: KpTableElement): number =>
-  calculateTableHeightMm(table.columns.length, table.rows.length, table.showPageHeader, table.style.rowHeight);
+  calculateTableRowsHeightMm(tableRowHeights(table), table.showPageHeader);
 
 const preferredActiveLayer = (layers: KpLayer[]): string =>
   layers.find((layer) => layer.visible && !layer.locked)?.id ?? layers[0]?.id ?? DEFAULT_LAYER_ID;
 
-const normalizeRect = (rect: KpRect, bounds: KpPage): KpRect => {
-  const maxWidth = Math.max(bounds.widthMm - 2 * MIN_ELEMENT_MM_SIZE, MIN_ELEMENT_MM_SIZE);
-  const maxHeight = Math.max(bounds.heightMm - 2 * MIN_ELEMENT_MM_SIZE, MIN_ELEMENT_MM_SIZE);
+const normalizeRect = (rect: KpRect, bounds: KpPage, canFillPage = false): KpRect => {
+  const maxWidth = canFillPage
+    ? bounds.widthMm
+    : Math.max(bounds.widthMm - 2 * MIN_ELEMENT_MM_SIZE, MIN_ELEMENT_MM_SIZE);
+  const maxHeight = canFillPage
+    ? bounds.heightMm
+    : Math.max(bounds.heightMm - 2 * MIN_ELEMENT_MM_SIZE, MIN_ELEMENT_MM_SIZE);
 
   return {
     x: clampMm(rect.x, 0, Math.max(0, bounds.widthMm - MIN_ELEMENT_MM_SIZE)),
@@ -315,22 +374,54 @@ const normalizeRect = (rect: KpRect, bounds: KpPage): KpRect => {
   };
 };
 
-const applyHistory = (state: EditorState, mutate: (draft: EditorState) => MutationResult): EditorState => {
-  const previousProject = clone(state.project);
-  const draft = clone(state);
+const cloneProjectForMutation = (project: KpProject): KpProject => ({
+  ...project,
+  metadata: { ...project.metadata },
+  layers: project.layers.map((layer) => ({ ...layer })),
+  pages: project.pages.map((page) => ({
+    ...page,
+    background: page.background ? { ...page.background } : null,
+    elements: page.elements.map((element) => clone(element))
+  })),
+  assets: [...project.assets],
+  styles: { ...project.styles }
+});
+
+const applyHistory = (
+  state: EditorState,
+  mutate: (draft: EditorState) => MutationResult,
+  historyGroupKey?: string
+): EditorState => {
+  const now = Date.now();
+  const draft: EditorState = {
+    ...state,
+    project: cloneProjectForMutation(state.project),
+    selected: { ...state.selected },
+    undoStack: state.undoStack,
+    redoStack: state.redoStack
+  };
   const changed = mutate(draft);
 
   if (!changed) {
     return state;
   }
 
-  draft.project = projectSchema.parse(draft.project);
+  if (!historyGroupKey) draft.project = projectSchema.parse(draft.project);
+
+  const joinsPreviousHistory = Boolean(
+    historyGroupKey &&
+    state.historyGroup?.key === historyGroupKey &&
+    now - state.historyGroup.updatedAt < 1_000
+  );
 
   return {
     ...draft,
-    undoStack: [...state.undoStack, previousProject].slice(-HISTORY_LIMIT),
+    undoStack: joinsPreviousHistory
+      ? state.undoStack
+      : [...state.undoStack, state.project].slice(-HISTORY_LIMIT),
     redoStack: [],
-    isDirty: true
+    isDirty: true,
+    historyGroup: historyGroupKey ? { key: historyGroupKey, updatedAt: now } : null
   };
 };
 
@@ -342,6 +433,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   redoStack: [],
   zoom: 1,
   activeLayerId: DEFAULT_LAYER_ID,
+  historyGroup: null,
 
   setProject(project) {
     const parsed = projectSchema.parse(project);
@@ -351,7 +443,8 @@ export const useEditorStore = create<EditorState>((set) => ({
       isDirty: false,
       undoStack: [],
       redoStack: [],
-      activeLayerId: preferredActiveLayer(parsed.layers)
+      activeLayerId: preferredActiveLayer(parsed.layers),
+      historyGroup: null
     });
   },
 
@@ -363,7 +456,8 @@ export const useEditorStore = create<EditorState>((set) => ({
       isDirty: false,
       undoStack: [],
       redoStack: [],
-      activeLayerId: preferredActiveLayer(project.layers)
+      activeLayerId: preferredActiveLayer(project.layers),
+      historyGroup: null
     });
   },
 
@@ -471,13 +565,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         if (!page) return;
 
         if (!layerIsEditable(draft, draft.activeLayerId)) return;
-        const lastBottom = page.elements.reduce(
-          (bottom, element) => Math.max(bottom, element.rect.y + element.rect.height),
-          PAGE_MARGIN_MM
-        );
-        const height = calculateTableHeightMm(3, 1);
-        const y = clampMm(lastBottom + 8, PAGE_MARGIN_MM, page.heightMm - PAGE_MARGIN_MM - height);
-        const element = makeDefaultTableElement(y, draft.activeLayerId);
+        const element = makeDefaultTableElement(page, draft.activeLayerId);
         page.elements.push(element);
         draft.selected = { type: 'element', pageId, elementId: element.id };
         return true;
@@ -495,7 +583,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     );
   },
 
-  addImage(pageId, assetId) {
+  addImage(pageId, assetId, center) {
     set((state) =>
       applyHistory(state, (draft) => {
         const page = draft.project.pages.find((item) => item.id === pageId);
@@ -504,27 +592,53 @@ export const useEditorStore = create<EditorState>((set) => ({
         if (!layerIsEditable(draft, draft.activeLayerId)) return;
         const width = 76;
         const height = 38;
-        const contentBottom = page.elements
-          .filter((element) => element.type !== 'table')
-          .reduce((bottom, element) => Math.max(bottom, element.rect.y + element.rect.height), PAGE_MARGIN_MM);
-        const tableTop = page.elements
-          .filter((element) => element.type === 'table')
-          .reduce((top, element) => Math.min(top, element.rect.y), page.heightMm - PAGE_MARGIN_MM);
-        const y = clampMm(contentBottom + 8, PAGE_MARGIN_MM, Math.max(PAGE_MARGIN_MM, tableTop - height - 8));
-
-        page.elements.push({
+        const element: KpElement = {
           id: `el_${nanoid(10)}`,
           type: 'image',
-          rect: {
-            x: 16,
-            y,
-            width,
-            height
-          },
+          rect: centeredRect(page, width, height, center),
           assetId,
           layerId: draft.activeLayerId,
           zIndex: page.elements.length
-        });
+        };
+        page.elements.push(element);
+        return true;
+      })
+    );
+  },
+
+  addShape(pageId, shape) {
+    set((state) =>
+      applyHistory(state, (draft) => {
+        const page = draft.project.pages.find((item) => item.id === pageId);
+        if (!page || !layerIsEditable(draft, draft.activeLayerId)) return;
+        const line = shape === 'line';
+        const element: KpShapeElement = {
+          id: `shape_${nanoid(10)}`,
+          type: 'shape',
+          shape,
+          rect: centeredRect(page, 72, line ? 12 : 54),
+          style: {
+            fillColor: '#dce9e3',
+            fillTransparent: line,
+            strokeColor: '#1e5b49',
+            strokeWidth: 2,
+            strokeStyle: 'solid',
+            cornerRadius: 0
+          },
+          text: '',
+          textStyle: {
+            fontFamily: 'Avenir Next, -apple-system, BlinkMacSystemFont, sans-serif',
+            fontSize: 14,
+            bold: false,
+            italic: false,
+            align: 'center',
+            color: '#23241f'
+          },
+          layerId: draft.activeLayerId,
+          zIndex: page.elements.length
+        };
+        page.elements.push(element);
+        draft.selected = { type: 'element', pageId, elementId: element.id };
         return true;
       })
     );
@@ -546,8 +660,18 @@ export const useEditorStore = create<EditorState>((set) => ({
         const element = page?.elements.find((candidate) => candidate.id === elementId);
         if (!page || !element || !elementIsEditable(draft, element)) return;
 
-        const nextRect = normalizeRect(rect, page);
+        const nextRect = normalizeRect(rect, page, element.type === 'image');
         if (element.type === 'table') {
+          if (Math.abs(nextRect.height - element.rect.height) > 0.001) {
+            const currentHeights = tableRowHeights(element);
+            const currentAverage = currentHeights.reduce((sum, height) => sum + height, 0) / Math.max(1, currentHeights.length);
+            const targetAverage = calculateTableRowHeightPx(nextRect.height, element.rows.length, element.showPageHeader);
+            const scale = targetAverage / Math.max(1, currentAverage);
+            element.style.rowHeights = Object.fromEntries(element.rows.map((row, index) => [
+              row.id,
+              clampMm(currentHeights[index] * scale, 24, 96)
+            ]));
+          }
           nextRect.height = calculateTableElementHeightMm(element);
         }
         if (
@@ -579,7 +703,45 @@ export const useEditorStore = create<EditorState>((set) => ({
 
         (element as KpTextElement).text = nextText;
         return true;
-      })
+      }, `text:${pageId}:${elementId}`)
+    );
+  },
+
+  updateShape(pageId, elementId, patch) {
+    set((state) =>
+      applyHistory(state, (draft) => {
+        const page = draft.project.pages.find((item) => item.id === pageId);
+        const element = page?.elements.find((candidate) => candidate.id === elementId);
+        if (!element || element.type !== 'shape' || !elementIsEditable(draft, element)) return;
+        const nextStyle = patch.style ? shapeStyleSchema.parse({
+          ...element.style,
+          ...patch.style,
+          strokeWidth: clampMm(patch.style.strokeWidth ?? element.style.strokeWidth, 0, 12),
+          cornerRadius: clampMm(patch.style.cornerRadius ?? element.style.cornerRadius, 0, 100)
+        }) : element.style;
+        const nextTextStyle = patch.textStyle ? textStyleSchema.parse({
+          ...element.textStyle,
+          ...patch.textStyle,
+          fontSize: clampMm(patch.textStyle.fontSize ?? element.textStyle.fontSize, 8, 72)
+        }) : element.textStyle;
+        const nextShape = patch.shape ?? element.shape;
+        const nextText = patch.text === undefined ? element.text : clampText(patch.text);
+        if (
+          nextShape === element.shape &&
+          nextText === element.text &&
+          JSON.stringify(nextStyle) === JSON.stringify(element.style) &&
+          JSON.stringify(nextTextStyle) === JSON.stringify(element.textStyle)
+        ) return;
+        element.shape = nextShape;
+        element.style = nextStyle;
+        element.text = nextText;
+        element.textStyle = nextTextStyle;
+        return true;
+      }, patch.text !== undefined
+        ? `shape-text:${pageId}:${elementId}`
+        : patch.textStyle
+          ? `shape-text-style:${pageId}:${elementId}:${Object.keys(patch.textStyle).sort().join(',')}`
+          : undefined)
     );
   },
 
@@ -590,16 +752,16 @@ export const useEditorStore = create<EditorState>((set) => ({
         const element = page?.elements.find((candidate) => candidate.id === elementId);
         if (!element || element.type !== 'text' || !elementIsEditable(draft, element)) return;
 
-        const nextStyle = {
+        const nextStyle = textStyleSchema.parse({
           ...element.style,
           ...style,
           fontSize: clampMm(style.fontSize ?? element.style.fontSize, 8, 72)
-        };
+        });
         if (JSON.stringify(nextStyle) === JSON.stringify(element.style)) return;
 
         element.style = nextStyle;
         return true;
-      })
+      }, `text-style:${pageId}:${elementId}:${Object.keys(style).sort().join(',')}`)
     );
   },
 
@@ -616,12 +778,12 @@ export const useEditorStore = create<EditorState>((set) => ({
           label: patch.label === undefined ? element.label : clampText(patch.label).slice(0, 120),
           value: patch.value === undefined ? element.value : clampText(patch.value),
           placeholder: patch.placeholder === undefined ? element.placeholder : clampText(patch.placeholder).slice(0, 240),
-          style: patch.style ? { ...element.style, ...patch.style } : element.style
+          style: patch.style ? fieldStyleSchema.parse({ ...element.style, ...patch.style }) : element.style
         };
         if (JSON.stringify(next) === JSON.stringify(element)) return;
         Object.assign(element, next);
         return true;
-      })
+      }, `text-field:${pageId}:${elementId}:${Object.keys(patch).sort().join(',')}`)
     );
   },
 
@@ -644,12 +806,12 @@ export const useEditorStore = create<EditorState>((set) => ({
           label: patch.label === undefined ? element.label : clampText(patch.label).slice(0, 120),
           placeholder: patch.placeholder === undefined ? element.placeholder : clampText(patch.placeholder).slice(0, 240),
           selectedOptionId,
-          style: patch.style ? { ...element.style, ...patch.style } : element.style
+          style: patch.style ? fieldStyleSchema.parse({ ...element.style, ...patch.style }) : element.style
         };
         if (JSON.stringify(next) === JSON.stringify(element)) return;
         Object.assign(element, next);
         return true;
-      })
+      }, `select-field:${pageId}:${elementId}:${Object.keys(patch).sort().join(',')}`)
     );
   },
 
@@ -679,7 +841,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         if (nextLabel === option.label) return;
         option.label = nextLabel;
         return true;
-      })
+      }, `select-option:${pageId}:${elementId}:${optionId}`)
     );
   },
 
@@ -706,7 +868,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         if (!nextTitle || nextTitle === draft.project.metadata.title) return;
         draft.project.metadata.title = nextTitle;
         return true;
-      })
+      }, 'project-title')
     );
   },
 
@@ -764,6 +926,8 @@ export const useEditorStore = create<EditorState>((set) => ({
         table.rows = table.rows.filter((row) => row.id !== rowId);
         if (table.rows.length === before) return;
         delete table.style.rowAlign[rowId];
+        delete table.style.rowVerticalAlign[rowId];
+        delete table.style.rowHeights[rowId];
 
         if (!table.rows.length) {
           table.rows.push({
@@ -795,6 +959,7 @@ export const useEditorStore = create<EditorState>((set) => ({
 
         table.columns.splice(columnIndex, 1);
         delete table.style.columnAlign[columnId];
+        delete table.style.columnVerticalAlign[columnId];
         table.rows.forEach((row) => {
           row.cells.splice(columnIndex, 1);
         });
@@ -815,7 +980,7 @@ export const useEditorStore = create<EditorState>((set) => ({
 
         table.pageHeader = normalized;
         return true;
-      })
+      }, `table-header:${pageId}:${tableId}`)
     );
   },
 
@@ -853,7 +1018,7 @@ export const useEditorStore = create<EditorState>((set) => ({
 
         row.cells[index].text = nextValue;
         return true;
-      })
+      }, `table-cell:${pageId}:${tableId}:${rowId}:${columnId}`)
     );
   },
 
@@ -863,12 +1028,16 @@ export const useEditorStore = create<EditorState>((set) => ({
         const page = draft.project.pages.find((item) => item.id === pageId);
         const table = findTable(page, tableId);
         if (!table || !elementIsEditable(draft, table)) return;
-        const next = { ...table.style, ...style };
+        const next = tableStyleSchema.parse({
+          ...table.style,
+          ...style,
+          rowHeights: style.rowHeight === undefined ? table.style.rowHeights : {}
+        });
         if (JSON.stringify(next) === JSON.stringify(table.style)) return;
         table.style = next;
         table.rect.height = calculateTableElementHeightMm(table);
         return true;
-      })
+      }, `table-style:${pageId}:${tableId}:${Object.keys(style).sort().join(',')}`)
     );
   },
 
@@ -899,6 +1068,75 @@ export const useEditorStore = create<EditorState>((set) => ({
         else table.style.rowAlign[rowId] = align;
         return true;
       })
+    );
+  },
+
+  updateTableColumnVerticalAlign(pageId, tableId, columnId, align) {
+    set((state) =>
+      applyHistory(state, (draft) => {
+        const page = draft.project.pages.find((item) => item.id === pageId);
+        const table = findTable(page, tableId);
+        if (!table || !elementIsEditable(draft, table) || !table.columns.includes(columnId)) return;
+        const current = table.style.columnVerticalAlign[columnId];
+        if ((align === null && current === undefined) || current === align) return;
+        if (align === null) delete table.style.columnVerticalAlign[columnId];
+        else table.style.columnVerticalAlign[columnId] = align;
+        return true;
+      })
+    );
+  },
+
+  updateTableRowVerticalAlign(pageId, tableId, rowId, align) {
+    set((state) =>
+      applyHistory(state, (draft) => {
+        const page = draft.project.pages.find((item) => item.id === pageId);
+        const table = findTable(page, tableId);
+        if (!table || !elementIsEditable(draft, table) || !table.rows.some((row) => row.id === rowId)) return;
+        const current = table.style.rowVerticalAlign[rowId];
+        if ((align === null && current === undefined) || current === align) return;
+        if (align === null) delete table.style.rowVerticalAlign[rowId];
+        else table.style.rowVerticalAlign[rowId] = align;
+        return true;
+      })
+    );
+  },
+
+  updateTableRowHeight(pageId, tableId, rowId, heightPx) {
+    set((state) =>
+      applyHistory(state, (draft) => {
+        const page = draft.project.pages.find((item) => item.id === pageId);
+        const table = findTable(page, tableId);
+        if (!table || !elementIsEditable(draft, table) || !table.rows.some((row) => row.id === rowId)) return;
+        const nextHeight = clampMm(heightPx, 24, 96);
+        const currentHeight = table.style.rowHeights[rowId] ?? table.style.rowHeight;
+        if (Math.abs(currentHeight - nextHeight) < 0.001) return;
+        table.style.rowHeights[rowId] = nextHeight;
+        table.rect.height = calculateTableElementHeightMm(table);
+        return true;
+      }, `table-row-height:${pageId}:${tableId}:${rowId}`)
+    );
+  },
+
+  resizeTableColumnBoundary(pageId, tableId, columnId, widthMm) {
+    set((state) =>
+      applyHistory(state, (draft) => {
+        const page = draft.project.pages.find((item) => item.id === pageId);
+        const table = findTable(page, tableId);
+        if (!table || !elementIsEditable(draft, table)) return;
+        const columnIndex = table.columns.indexOf(columnId);
+        if (columnIndex < 0 || columnIndex >= table.columns.length - 1) return;
+        const leftWidth = table.rows[0]?.cells[columnIndex]?.widthMm ?? 35;
+        const rightWidth = table.rows[0]?.cells[columnIndex + 1]?.widthMm ?? 35;
+        const pairWidth = leftWidth + rightWidth;
+        const nextLeftWidth = clampMm(widthMm, 10, pairWidth - 10);
+        const nextRightWidth = pairWidth - nextLeftWidth;
+        if (Math.abs(leftWidth - nextLeftWidth) < 0.001) return;
+        table.rows.forEach((row) => {
+          if (row.cells[columnIndex]) row.cells[columnIndex].widthMm = nextLeftWidth;
+          if (row.cells[columnIndex + 1]) row.cells[columnIndex + 1].widthMm = nextRightWidth;
+        });
+        return true;
+      }, `table-column-resize:${pageId}:${tableId}:${columnId}`)
     );
   },
 
@@ -1074,6 +1312,31 @@ export const useEditorStore = create<EditorState>((set) => ({
     );
   },
 
+  setElementStackPosition(pageId, elementId, position) {
+    set((state) =>
+      applyHistory(state, (draft) => {
+        const page = draft.project.pages.find((candidate) => candidate.id === pageId);
+        const element = page?.elements.find((candidate) => candidate.id === elementId);
+        if (!page || !element || !elementIsEditable(draft, element)) return;
+
+        const sourceOrder = new Map(page.elements.map((candidate, index) => [candidate.id, index]));
+        const ordered = page.elements
+          .filter((candidate) => candidate.layerId === element.layerId)
+          .sort((first, second) => first.zIndex - second.zIndex || (sourceOrder.get(first.id) ?? 0) - (sourceOrder.get(second.id) ?? 0));
+        if (ordered.length <= 1) return;
+
+        const next = ordered.filter((candidate) => candidate.id !== elementId);
+        if (position === 'front') next.push(element);
+        else next.unshift(element);
+
+        const unchanged = next.every((candidate, index) => candidate.id === ordered[index]?.id && candidate.zIndex === index);
+        if (unchanged) return;
+        next.forEach((candidate, index) => { candidate.zIndex = index; });
+        return true;
+      })
+    );
+  },
+
   updatePageBackground(pageId, background) {
     set((state) =>
       applyHistory(state, (draft) => {
@@ -1162,7 +1425,8 @@ export const useEditorStore = create<EditorState>((set) => ({
         activeLayerId: previousProject.layers.some((layer) => layer.id === state.activeLayerId && layer.visible && !layer.locked)
           ? state.activeLayerId
           : preferredActiveLayer(previousProject.layers),
-        isDirty: true
+        isDirty: true,
+        historyGroup: null
       };
     });
   },
@@ -1185,7 +1449,8 @@ export const useEditorStore = create<EditorState>((set) => ({
         activeLayerId: next.layers.some((layer) => layer.id === state.activeLayerId && layer.visible && !layer.locked)
           ? state.activeLayerId
           : preferredActiveLayer(next.layers),
-        isDirty: true
+        isDirty: true,
+        historyGroup: null
       };
     });
   },

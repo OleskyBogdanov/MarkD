@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   calculateTableHeightMm,
+  calculateTableRowsHeightMm,
   iconNameSchema,
   migrateProject,
   mmToPx,
@@ -8,11 +9,13 @@ import {
   projectSchema,
   schemaVersion,
   serializeProject,
+  shapeElementSchema,
   textAlignSchema,
   textFieldElementSchema,
   selectFieldElementSchema,
   tableSchema
 } from '@/renderer/domain/model';
+import { resolveTableCellVerticalAlign, resolveTableRowHeight } from '@/renderer/domain/tableStyle';
 
 describe('единицы измерения', () => {
   test('px/mm обратимы для A4 масштаба 1', () => {
@@ -30,6 +33,7 @@ describe('единицы измерения', () => {
     expect(calculateTableHeightMm(3, 4)).toBe(47);
     expect(calculateTableHeightMm(3, 1, false)).toBe(13);
     expect(calculateTableHeightMm(3, 2, true, 68)).toBe(47);
+    expect(calculateTableRowsHeightMm([34, 68])).toBe(38);
   });
 });
 
@@ -85,6 +89,7 @@ describe('схема проекта', () => {
       placeholder: 'Введите телефон',
       iconName: 'phone',
       textAlign: 'right',
+      verticalAlign: 'bottom',
       style: {},
       zIndex: 1
     });
@@ -102,6 +107,7 @@ describe('схема проекта', () => {
 
     expect(field.iconName).toBe('phone');
     expect(field.textAlign).toBe('right');
+    expect(field.verticalAlign).toBe('bottom');
     expect(field).toMatchObject({
       showLabel: true,
       showPlaceholder: true,
@@ -114,6 +120,22 @@ describe('схема проекта', () => {
     expect(select.options[0].id).toBe('stable-option-id');
     expect(['left', 'center', 'right'].map((align) => textAlignSchema.parse(align))).toEqual(['left', 'center', 'right']);
     expect(() => iconNameSchema.parse('unknown-icon')).toThrow();
+  });
+
+  test('добавляет среднее вертикальное выравнивание старому textField', () => {
+    const field = textFieldElementSchema.parse({
+      id: 'field-without-vertical-align',
+      type: 'textField',
+      rect: { x: 10, y: 20, width: 80, height: 20 },
+      label: 'Контакт',
+      value: 'Мария',
+      placeholder: '',
+      textAlign: 'left',
+      style: {},
+      zIndex: 1
+    });
+
+    expect(field.verticalAlign).toBe('middle');
   });
 
   test('добавляет совместимые значения настроек старой таблице', () => {
@@ -140,8 +162,56 @@ describe('схема проекта', () => {
         borderStyle: 'solid',
         verticalAlign: 'middle',
         wrapText: true,
-        alternatingRows: false
+        alternatingRows: false,
+        columnVerticalAlign: {},
+        rowVerticalAlign: {},
+        rowHeights: {}
       }
+    });
+  });
+
+  test('применяет высоту строки и вертикальное выравнивание по приоритету', () => {
+    const table = tableSchema.parse({
+      id: 'table-alignment',
+      type: 'table',
+      rect: { x: 10, y: 10, width: 100, height: 30 },
+      columns: ['column-1'],
+      rows: [{ id: 'row-1', cells: [{ id: 'cell-1', text: 'Текст', widthMm: 35 }] }],
+      style: {
+        verticalAlign: 'middle',
+        columnVerticalAlign: { 'column-1': 'bottom' },
+        rowVerticalAlign: { 'row-1': 'top' },
+        rowHeights: { 'row-1': 58 }
+      },
+      zIndex: 0
+    });
+
+    expect(resolveTableCellVerticalAlign(table, 'row-1', 'column-1')).toBe('top');
+    expect(resolveTableRowHeight(table, 'row-1')).toBe(58);
+  });
+
+  test('валидирует базовую фигуру и её оформление', () => {
+    const shape = shapeElementSchema.parse({
+      id: 'shape-1',
+      type: 'shape',
+      shape: 'triangle',
+      rect: { x: 60, y: 100, width: 80, height: 60 },
+      style: {
+        fillColor: '#dde9e3',
+        fillTransparent: false,
+        strokeColor: '#1e5b49',
+        strokeWidth: 2,
+        strokeStyle: 'dashed'
+      },
+      layerId: 'layer_main',
+      zIndex: 2
+    });
+
+    expect(shape).toMatchObject({
+      shape: 'triangle',
+      text: '',
+      style: { strokeStyle: 'dashed', strokeWidth: 2, cornerRadius: 0 },
+      textStyle: { fontSize: 12, align: 'center', color: '#23241f' }
     });
   });
 

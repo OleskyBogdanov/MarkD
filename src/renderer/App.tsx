@@ -42,6 +42,7 @@ export const App = () => {
     addSelectField,
     addTable,
     addImage,
+    addShape,
     addAsset,
     setDirty,
     undo,
@@ -90,12 +91,10 @@ export const App = () => {
   }, [loadRecentProjects, setDirty, setProject]);
 
   const togglePreview = useCallback((): void => {
-    setRenderMode((current) => {
-      const next = current === 'preview' ? 'edit' : 'preview';
-      if (next === 'preview') select({ type: 'none' });
-      return next;
-    });
-  }, [select]);
+    const next = renderMode === 'preview' ? 'edit' : 'preview';
+    if (next === 'preview') select({ type: 'none' });
+    setRenderMode(next);
+  }, [renderMode, select]);
 
   const handleOpenProject = useCallback(async (): Promise<void> => {
     if (!confirmDiscardChanges()) return;
@@ -307,6 +306,7 @@ export const App = () => {
           onAddSelectField={() => addToFirstPage(addSelectField)}
           onAddTable={() => addToFirstPage(addTable)}
           onAddImage={() => void onAddImage()}
+          onAddShape={(shape) => addToFirstPage((pageId) => addShape(pageId, shape))}
           onSave={() => void handleSave()}
           onOpen={() => void handleOpenProject()}
           selected={selected}

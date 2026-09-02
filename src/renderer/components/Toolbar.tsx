@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ChevronDown,
+  Circle,
   Eye,
   EyeOff,
   FileDown,
@@ -9,18 +10,22 @@ import {
   Image,
   ListFilter,
   LoaderCircle,
+  Minus,
   Plus,
   Redo2,
   SquarePlus,
+  Square,
   Table2,
   Trash2,
   Type,
+  Triangle,
   Undo2,
   ZoomIn,
   ZoomOut
 } from 'lucide-react';
 import { Button } from '@/renderer/components/ui/button';
 import type { KpSelection } from '@/renderer/store/useEditorStore';
+import type { ShapeKind } from '@/renderer/domain/model';
 
 type ToolbarProps = {
   onAddPage: () => void;
@@ -29,6 +34,7 @@ type ToolbarProps = {
   onAddSelectField: () => void;
   onAddTable: () => void;
   onAddImage: () => void;
+  onAddShape: (shape: ShapeKind) => void;
   onSave: () => void;
   onOpen: () => void;
   selected: KpSelection;
@@ -54,6 +60,7 @@ export const Toolbar = ({
   onAddSelectField,
   onAddTable,
   onAddImage,
+  onAddShape,
   onSave,
   onOpen,
   onUndo,
@@ -120,6 +127,11 @@ export const Toolbar = ({
             <button type="button" role="menuitem" onClick={() => runAddAction(onAddSelectField)}><ListFilter aria-hidden="true" /><span><strong>Выпадающий список</strong><small>Выбор из устойчивых вариантов</small></span></button>
             <button type="button" role="menuitem" onClick={() => runAddAction(onAddTable)}><Table2 aria-hidden="true" /><span><strong>Таблица</strong><small>Строки и колонки предложения</small></span></button>
             <button type="button" role="menuitem" onClick={() => runAddAction(onAddImage)}><Image aria-hidden="true" /><span><strong>Изображение</strong><small>PNG, JPG или WebP</small></span></button>
+            <div className="add-menu-section-label" role="presentation">Фигуры</div>
+            <button type="button" role="menuitem" onClick={() => runAddAction(() => onAddShape('rectangle'))}><Square aria-hidden="true" /><span><strong>Прямоугольник</strong><small>Заливка и граница</small></span></button>
+            <button type="button" role="menuitem" onClick={() => runAddAction(() => onAddShape('ellipse'))}><Circle aria-hidden="true" /><span><strong>Эллипс</strong><small>Заливка и граница</small></span></button>
+            <button type="button" role="menuitem" onClick={() => runAddAction(() => onAddShape('triangle'))}><Triangle aria-hidden="true" /><span><strong>Треугольник</strong><small>Заливка и граница</small></span></button>
+            <button type="button" role="menuitem" onClick={() => runAddAction(() => onAddShape('line'))}><Minus aria-hidden="true" /><span><strong>Линия</strong><small>Цвет, толщина и штрих</small></span></button>
             <button type="button" role="menuitem" onClick={() => runAddAction(onAddPage)}><SquarePlus aria-hidden="true" /><span><strong>Страница</strong><small>Новый чистый лист A4</small></span></button>
           </div>
         ) : null}
