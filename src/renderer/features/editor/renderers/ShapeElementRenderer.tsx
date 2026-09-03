@@ -10,6 +10,7 @@ import {
 } from 'react';
 import type { KpRect, KpShapeElement, RenderMode } from '@/renderer/domain/model';
 import { BufferedTextarea } from '@/renderer/components/ui/BufferedTextControl';
+import './shape-element.css';
 import { ElementFrame } from './ElementFrame';
 import { fontFamilyForId } from '@/renderer/domain/fontRegistry';
 

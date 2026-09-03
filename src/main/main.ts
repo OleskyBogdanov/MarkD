@@ -270,6 +270,9 @@ if (!hasSingleInstanceLock) {
 
 if (hasSingleInstanceLock) app.whenReady().then(() => {
   if (isHeadlessTest && process.platform === 'darwin') app.dock?.hide();
+  if (!app.isPackaged && !isHeadlessTest) {
+    app.dock?.setIcon(join(app.getAppPath(), 'build', 'icon.png'));
+  }
   if (!isDev) {
     setupProtocol();
   }

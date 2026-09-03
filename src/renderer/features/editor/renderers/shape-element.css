@@ -1,0 +1,9 @@
+.shape-element { overflow: visible; }
+.document-shape { width: 100%; height: 100%; display: block; overflow: visible; pointer-events: none; }
+.shape-text-layer { position: absolute; inset: 0; display: flex; align-items: center; overflow: hidden; pointer-events: none; }
+.shape-text-layer.is-editing { pointer-events: auto; }
+.shape-text-presentation,
+.shape-text-editor { width: 100%; max-height: 100%; overflow: hidden; border: 0; border-radius: inherit; padding: var(--shape-text-padding); background: transparent; line-height: 1.2; overflow-wrap: anywhere; white-space: pre-wrap; }
+.shape-text-editor { height: 100%; resize: none; pointer-events: auto; }
+.shape-text-editor:focus { background: rgba(255, 254, 250, 0.72); }
+.shape-text-edit-button { position: absolute; top: -28px; left: 30px; min-width: 48px; min-height: 24px; border: 1px solid rgba(57, 62, 53, 0.22); border-radius: 7px; padding: 0 8px; color: #4c5048; background: rgba(255, 254, 250, 0.98); box-shadow: 0 2px 8px rgba(35, 36, 31, 0.16); font-size: 10px; font-weight: 700; }

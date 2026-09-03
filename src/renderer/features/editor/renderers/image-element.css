@@ -1,0 +1,5 @@
+.image-element { overflow: visible; background: transparent; }
+.image-element img { width: 100%; height: 100%; display: block; object-fit: contain; object-position: center; user-select: none; -webkit-user-drag: none; }
+.canvas-element.image-element-full-page { border: 0; }
+.image-element-full-page img { object-fit: fill; }
+.missing-image { width: 100%; height: 100%; display: grid; place-items: center; color: var(--muted); font-size: 11px; }

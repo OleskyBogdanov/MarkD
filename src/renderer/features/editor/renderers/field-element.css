@@ -1,0 +1,30 @@
+.text-field-element,
+.select-field-element { overflow: visible; }
+.document-field { width: 100%; height: 100%; min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: calc(3px * var(--canvas-zoom, 1)); overflow: hidden; padding: calc(2px * var(--canvas-zoom, 1)); font-family: var(--field-font-family, 'MarkD Inter', sans-serif); }
+.document-field.without-label { grid-template-rows: minmax(0, 1fr); gap: 0; }
+.control-attribution { color: var(--muted); font-size: 10px; font-weight: 500; }
+.document-field > label,
+.field-label { min-width: 0; overflow: hidden; color: var(--field-label-color); font-size: calc(var(--field-font-size) * 0.72); font-weight: 700; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.field-control { position: relative; min-width: 0; min-height: 0; display: grid; overflow: hidden; border: var(--field-border-width, calc(1px * var(--canvas-zoom, 1))) solid var(--field-border); border-radius: var(--field-radius); color: var(--field-text-color); background: var(--field-background); }
+.field-control input,
+.field-control textarea,
+.field-control select,
+.field-presentation { width: 100%; height: 100%; min-width: 0; display: block; overflow: hidden; border: 0; border-radius: inherit; padding: 0 calc(9px * var(--canvas-zoom, 1)); color: inherit; background: transparent; font-family: inherit; font-size: var(--field-font-size); line-height: normal; text-overflow: ellipsis; white-space: nowrap; }
+.field-control textarea { max-height: 100%; min-height: calc(1.2em + 4px * var(--canvas-zoom, 1)); resize: none; line-height: 1.2; overflow-wrap: anywhere; white-space: pre-wrap; }
+.field-control input::placeholder,
+.field-control textarea::placeholder { color: #93958d; opacity: 1; }
+.field-control input:focus,
+.field-control textarea:focus,
+.field-control select:focus { outline: 0; box-shadow: inset 0 0 0 calc(1px * var(--canvas-zoom, 1)) var(--accent); }
+.field-leading { position: absolute; inset: 0 auto 0 0; z-index: 2; width: calc(30px * var(--canvas-zoom, 1)); display: grid; place-items: center; color: var(--field-icon-color, var(--accent)); pointer-events: none; }
+.field-leading svg { width: calc(14px * var(--canvas-zoom, 1)); height: calc(14px * var(--canvas-zoom, 1)); }
+.has-leading-icon .field-control input,
+.has-leading-icon .field-control textarea,
+.has-leading-icon .field-presentation { padding-left: calc(31px * var(--canvas-zoom, 1)); }
+.field-presentation { display: grid; align-content: center; line-height: 1.2; pointer-events: none; }
+.text-field-presentation { overflow-wrap: anywhere; text-overflow: clip; white-space: pre-wrap; }
+.field-presentation.is-placeholder { color: #93958d; }
+.select-control select { appearance: auto; padding-right: calc(24px * var(--canvas-zoom, 1)); }
+.select-control .field-presentation { display: flex; align-items: center; justify-content: space-between; gap: calc(6px * var(--canvas-zoom, 1)); line-height: normal; }
+.select-control .field-presentation span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.select-control .field-presentation svg { width: calc(14px * var(--canvas-zoom, 1)); height: calc(14px * var(--canvas-zoom, 1)); flex: 0 0 auto; }

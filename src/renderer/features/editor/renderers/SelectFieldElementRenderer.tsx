@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react';
 import type { KpRect, KpSelectFieldElement, RenderMode } from '@/renderer/domain/model';
 import { ElementFrame } from './ElementFrame';
 import { fontFamilyForId } from '@/renderer/domain/fontRegistry';
+import './field-element.css';
 
 type SelectFieldElementRendererProps = {
   element: KpSelectFieldElement;

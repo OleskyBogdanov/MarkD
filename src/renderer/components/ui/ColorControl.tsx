@@ -3,12 +3,13 @@ import { useEffect, useState } from 'react';
 const HEX_COLOR = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/;
 
 type ColorControlProps = {
+  disabled?: boolean;
   label: string;
   value: string;
   onChange: (value: string) => void;
 };
 
-export const ColorControl = ({ label, value, onChange }: ColorControlProps) => {
+export const ColorControl = ({ disabled = false, label, value, onChange }: ColorControlProps) => {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
 
@@ -18,11 +19,12 @@ export const ColorControl = ({ label, value, onChange }: ColorControlProps) => {
   };
 
   return (
-    <label className="color-control">
+    <label className={`color-control${disabled ? ' is-disabled' : ''}`}>
       {label}
       <span>
-        <input type="color" value={value.slice(0, 7)} aria-label={`${label}: выбор цвета`} onChange={(event) => onChange(event.currentTarget.value)} />
+        <input disabled={disabled} type="color" value={value.slice(0, 7)} aria-label={`${label}: выбор цвета`} onChange={(event) => onChange(event.currentTarget.value)} />
         <input
+          disabled={disabled}
           type="text"
           value={draft}
           aria-label={`${label}: HEX`}

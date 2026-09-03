@@ -1,21 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { AlertCircle, CheckCircle2, EyeOff, House, LoaderCircle, ZoomIn, ZoomOut } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { migrateProject, serializeProject, type KpProject, type RenderMode } from '@/renderer/domain/model';
 import { useEditorStore } from './store/useEditorStore';
-import { ProjectCanvas } from './features/editor/ProjectCanvas';
-import { Toolbar } from './components/Toolbar';
-import { Inspector } from './features/editor/Inspector';
-import { LayersPanel } from './features/editor/LayersPanel';
-import { InspectorResizeHandle } from './components/InspectorResizeHandle';
+import { EditorWorkspace, type OperationState } from './features/editor/EditorWorkspace';
 import { StartScreen } from './components/StartScreen';
 import type { OpenProjectResult, RecentProjectSummary } from '@/shared/ipc-channels';
-
-type OperationKind = 'idle' | 'saving' | 'exporting' | 'success' | 'error';
-
-type OperationState = {
-  kind: OperationKind;
-  message: string;
-};
 
 const fileNameFromPath = (path: string): string => path.split(/[\\/]/).at(-1) ?? path;
 
@@ -52,7 +41,30 @@ export const App = () => {
     deleteSelected,
     setZoom,
     zoom
-  } = useEditorStore();
+  } = useEditorStore(useShallow((state) => ({
+    project: state.project,
+    selected: state.selected,
+    select: state.select,
+    isDirty: state.isDirty,
+    setProject: state.setProject,
+    resetProject: state.resetProject,
+    addPage: state.addPage,
+    addText: state.addText,
+    addTextField: state.addTextField,
+    addSelectField: state.addSelectField,
+    addTable: state.addTable,
+    addImage: state.addImage,
+    addShape: state.addShape,
+    addAsset: state.addAsset,
+    setDirty: state.setDirty,
+    undo: state.undo,
+    redo: state.redo,
+    undoStack: state.undoStack,
+    redoStack: state.redoStack,
+    deleteSelected: state.deleteSelected,
+    setZoom: state.setZoom,
+    zoom: state.zoom
+  })));
 
   const [projectPath, setProjectPath] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<'home' | 'editor'>('home');
@@ -308,12 +320,6 @@ export const App = () => {
     }
   }, [addAsset, addImage, project.pages]);
 
-  const statusIcon = operation.kind === 'success'
-    ? <CheckCircle2 size={17} />
-    : operation.kind === 'error'
-      ? <AlertCircle size={17} />
-      : <LoaderCircle className="spin" size={17} />;
-
   if (workspace === 'home') {
     return (
       <StartScreen
@@ -330,96 +336,42 @@ export const App = () => {
   }
 
   return (
-    <div
-      className={`app-shell mode-${renderMode} ${isPreview ? 'preview-mode' : ''}`}
-      style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}
-    >
-      {renderMode === 'edit' ? <header className="app-header">
-        <div className="brand-lockup">
-          <button type="button" className="brand-mark brand-home-button" aria-label="К проектам" title="К проектам" onClick={handleShowProjects}>M</button>
-          <div>
-            <span className="brand-name">MARKD</span>
-            <h1>{project.metadata.title}</h1>
-          </div>
-        </div>
-
-        <Toolbar
-          onAddPage={addPage}
-          onAddText={onAddText}
-          onAddTextField={() => addToFirstPage(addTextField)}
-          onAddSelectField={() => addToFirstPage(addSelectField)}
-          onAddTable={() => addToFirstPage(addTable)}
-          onAddImage={() => void onAddImage()}
-          onAddShape={(shape) => addToFirstPage((pageId) => addShape(pageId, shape))}
-          onSaveFile={() => void handleSave()}
-          onSaveTemplate={() => void handleSaveTemplate()}
-          onOpen={() => void handleOpenProject()}
-          selected={selected}
-          onUndo={undo}
-          onRedo={redo}
-          onDelete={deleteSelected}
-          onZoomIn={() => setZoom(Math.min(2, zoom + 0.1))}
-          onZoomOut={() => setZoom(Math.max(0.5, zoom - 0.1))}
-          isDirty={isDirty}
-          isBusy={isBusy}
-          onExport={() => void handleExport()}
-          isPreview={isPreview}
-          onTogglePreview={togglePreview}
-          canUndo={undoStack.length > 0}
-          canRedo={redoStack.length > 0}
-          zoom={zoom}
-        />
-
-        <div className="document-readout" aria-label={`Масштаб ${Math.round(zoom * 100)} процентов`}>
-          <House size={13} aria-hidden="true" />
-          <strong>{Math.round(zoom * 100)}%</strong>
-          <span>A4 · {project.pages.length} стр.</span>
-        </div>
-      </header> : renderMode === 'preview' ? (
-        <header className="preview-header" aria-label="Панель предпросмотра">
-          <span>Предпросмотр документа</span>
-          <div>
-            <button type="button" aria-label="Уменьшить" title="Уменьшить" onClick={() => setZoom(Math.max(0.5, zoom - 0.1))} disabled={zoom <= 0.5}><ZoomOut size={16} aria-hidden="true" /></button>
-            <strong aria-label={`Масштаб ${Math.round(zoom * 100)} процентов`}>{Math.round(zoom * 100)}%</strong>
-            <button type="button" aria-label="Увеличить" title="Увеличить" onClick={() => setZoom(Math.min(2, zoom + 0.1))} disabled={zoom >= 2}><ZoomIn size={16} aria-hidden="true" /></button>
-            <button type="button" className="exit-preview-button" aria-label="Вернуться к редактированию" title="Вернуться к редактированию" onClick={togglePreview}><EyeOff size={16} aria-hidden="true" /> Вернуться</button>
-          </div>
-        </header>
-      ) : null}
-
-      <main className="app-main">
-        <section
-          className="canvas-col"
-          aria-label="Рабочая область документа"
-          onPointerDown={renderMode === 'edit' ? (event) => {
-            const target = event.target;
-            if (target instanceof Element && target.closest('.canvas-element')) return;
-            select({ type: 'none' });
-          } : undefined}
-        >
-          <ProjectCanvas
-            project={project}
-            zoom={zoom}
-            renderMode={renderMode}
-          />
-        </section>
-        {renderMode === 'edit' ? (
-          <>
-            <InspectorResizeHandle width={inspectorWidth} onChange={setInspectorWidth} />
-            <aside className="inspector-col" aria-label="Инспектор свойств">
-              <LayersPanel />
-              <Inspector />
-            </aside>
-          </>
-        ) : null}
-      </main>
-
-      {renderMode === 'edit' && operation.kind !== 'idle' ? (
-        <div className={`status-toast status-${operation.kind}`} role="status" aria-live="polite">
-          {statusIcon}
-          <span>{operation.message}</span>
-        </div>
-      ) : null}
-    </div>
+    <EditorWorkspace
+      project={project}
+      renderMode={renderMode}
+      zoom={zoom}
+      inspectorWidth={inspectorWidth}
+      operation={operation}
+      onInspectorWidthChange={setInspectorWidth}
+      onShowProjects={handleShowProjects}
+      onTogglePreview={togglePreview}
+      onZoomChange={setZoom}
+      toolbarProps={{
+        onAddPage: addPage,
+        onAddText,
+        onAddTextField: () => addToFirstPage(addTextField),
+        onAddSelectField: () => addToFirstPage(addSelectField),
+        onAddTable: () => addToFirstPage(addTable),
+        onAddImage: () => void onAddImage(),
+        onAddShape: (shape) => addToFirstPage((pageId) => addShape(pageId, shape)),
+        onSaveFile: () => void handleSave(),
+        onSaveTemplate: () => void handleSaveTemplate(),
+        onOpen: () => void handleOpenProject(),
+        selected,
+        onUndo: undo,
+        onRedo: redo,
+        onDelete: deleteSelected,
+        onZoomIn: () => setZoom(Math.min(2, zoom + 0.1)),
+        onZoomOut: () => setZoom(Math.max(0.5, zoom - 0.1)),
+        isDirty,
+        isBusy,
+        onExport: () => void handleExport(),
+        isPreview,
+        onTogglePreview: togglePreview,
+        canUndo: undoStack.length > 0,
+        canRedo: redoStack.length > 0,
+        zoom
+      }}
+    />
   );
 };

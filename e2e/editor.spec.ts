@@ -25,6 +25,7 @@ const screenshotPaths = {
   preview: '/private/tmp/markd-e2e-preview.png',
   narrow: '/private/tmp/markd-e2e-narrow.png'
 } as const;
+const shapePanelScreenshotPath = '/private/tmp/markd-e2e-shape-panel.png';
 
 let electronApp: ElectronApplication;
 let window: Page;
@@ -33,7 +34,7 @@ let runtimeErrors: string[];
 test.beforeEach(async () => {
   rmSync(userDataPath, { recursive: true, force: true });
   rmSync(transferredUserDataPath, { recursive: true, force: true });
-  for (const path of [projectPath, templatePath, transferredProjectPath, legacyProjectPath, convertedLegacyProjectPath, pdfPath, ...Object.values(screenshotPaths)]) {
+  for (const path of [projectPath, templatePath, transferredProjectPath, legacyProjectPath, convertedLegacyProjectPath, pdfPath, shapePanelScreenshotPath, ...Object.values(screenshotPaths)]) {
     if (existsSync(path)) unlinkSync(path);
   }
 
@@ -99,6 +100,13 @@ const addElement = async (name: RegExp): Promise<void> => {
   await window.getByRole('menuitem', { name }).click();
 };
 
+const openInspectorSection = async (name: string): Promise<Locator> => {
+  const trigger = window.getByRole('button', { name, exact: true });
+  if (await trigger.getAttribute('aria-expanded') === 'false') await trigger.click();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  return trigger;
+};
+
 const saveFileFromMenu = async (): Promise<void> => {
   await window.getByRole('button', { name: /^Сохранить(?: ·)?$/ }).click();
   await window.getByRole('menuitem', { name: /^Сохранить файл/ }).click();
@@ -111,8 +119,10 @@ test('shows the MarkD project screen and preserves history across core actions',
   await expect.poll(() => electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible())).toBe(false);
   await expect(window).toHaveTitle(/MarkD/);
   await expect(window.getByText('MARKD', { exact: true })).toBeVisible();
+  await expect(window.getByText('Выберите элемент, чтобы переместить его, изменить размер или настроить свойства.', { exact: true })).toHaveCount(0);
   await expect(window.getByRole('heading', { name: 'Настройки проекта' })).toBeVisible();
   await expect.poll(() => window.evaluate(() => typeof window.desktop)).toBe('object');
+  await expect(window.locator('.document-readout svg')).toHaveCount(0);
 
   await window.getByRole('button', { name: 'К проектам' }).click();
   await expect(window.getByTestId('start-screen')).toBeVisible();
@@ -125,6 +135,21 @@ test('shows the MarkD project screen and preserves history across core actions',
   const textElements = window.getByTestId('text-element');
   const initialPageCount = await pages.count();
   const initialTextCount = await textElements.count();
+
+  await expect(window.locator('.canvas-col')).toHaveCSS('padding-bottom', '36px');
+  await expect(window.locator('.page-item').last()).toHaveCSS('margin-bottom', '0px');
+
+  const addTrigger = window.getByRole('button', { name: 'Добавить', exact: true });
+  await addTrigger.focus();
+  await addTrigger.press('ArrowDown');
+  const firstAddItem = window.getByRole('menuitem', { name: /^Текст Свободный/ });
+  const lastAddItem = window.getByRole('menuitem', { name: /^Страница Новый/ });
+  await expect(firstAddItem).toBeFocused();
+  await firstAddItem.press('End');
+  await expect(lastAddItem).toBeFocused();
+  await lastAddItem.press('Escape');
+  await expect(addTrigger).toBeFocused();
+  await expect(lastAddItem).toHaveCount(0);
 
   await addElement(/^Страница/);
   await expect(pages).toHaveCount(initialPageCount + 1);
@@ -187,7 +212,7 @@ test('opens a saved project from the recent projects screen', async () => {
 
 test('loads all 20 bundled document fonts without system dependencies', async () => {
   await window.getByTestId('text-element').first().getByRole('textbox', { name: 'Текст на странице' }).click();
-  const fontSelect = window.getByLabel('Гарнитура');
+  const fontSelect = window.getByLabel('Шрифт');
   await expect(fontSelect.locator('option')).toHaveCount(20);
 
   const loaded = await window.evaluate(async (families) => Promise.all(families.map(async (family) => {
@@ -200,7 +225,7 @@ test('loads all 20 bundled document fonts without system dependencies', async ()
 test('opens a copied self-contained project on a clean profile', async () => {
   test.setTimeout(60_000);
   await window.getByTestId('text-element').first().getByRole('textbox', { name: 'Текст на странице' }).click();
-  await window.getByLabel('Гарнитура').selectOption('pt-serif');
+  await window.getByLabel('Шрифт').selectOption('pt-serif');
   await addElement(/^Изображение/);
   await expect(window.getByTestId('image-element')).toHaveCount(1);
 
@@ -282,6 +307,7 @@ test('creates, saves and exports a proposal without image/table overlap', async 
 
   await window.getByTestId('table-element').click({ position: { x: 2, y: 2 } });
   await expect(window.getByRole('heading', { name: 'Таблица' })).toBeVisible();
+  await openInspectorSection('Положение');
   const tableY = window.getByLabel('Y, мм');
   await tableY.fill('158');
   await expect(tableY).toHaveValue('158');
@@ -409,10 +435,46 @@ test('adds and styles a basic shape', async () => {
   await expect(window.getByRole('heading', { name: 'Фигура' })).toBeVisible();
 
   await window.getByLabel('Тип фигуры').selectOption('triangle');
-  await window.getByLabel('Тип линии').selectOption('dashed');
+  await openInspectorSection('Контур');
+  await window.getByLabel('Стиль').selectOption('dashed');
   await window.getByLabel('Толщина, px').fill('3');
   await expect(shape.locator('polygon')).toHaveCount(1);
   await expect.poll(() => shape.locator('polygon').evaluate((node) => getComputedStyle(node).strokeDasharray)).toContain('10');
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('groups shape properties into keyboard-accessible collapsible sections', async () => {
+  await addElement(/^Прямоугольник/);
+
+  const form = window.getByRole('button', { name: 'Форма', exact: true });
+  const fill = window.getByRole('button', { name: 'Заливка', exact: true });
+  const stroke = window.getByRole('button', { name: 'Контур', exact: true });
+  const text = window.getByRole('button', { name: 'Текст', exact: true });
+  const position = window.getByRole('button', { name: 'Положение', exact: true });
+
+  await expect(form).toHaveAttribute('aria-expanded', 'true');
+  await expect(fill).toHaveAttribute('aria-expanded', 'true');
+  await expect(stroke).toHaveAttribute('aria-expanded', 'false');
+  await expect(text).toHaveAttribute('aria-expanded', 'false');
+  await expect(position).toHaveAttribute('aria-expanded', 'false');
+  await expect(window.getByText('КОМПОНЕНТ', { exact: true })).toHaveCount(0);
+  await window.locator('.sidebar-properties').screenshot({ path: shapePanelScreenshotPath });
+
+  await stroke.focus();
+  await stroke.press('Enter');
+  await expect(stroke).toBeFocused();
+  await expect(stroke).toHaveAttribute('aria-expanded', 'true');
+  await expect(stroke).toHaveCSS('outline-style', 'solid');
+  await expect(window.getByLabel('Толщина, px')).toBeVisible();
+
+  await text.focus();
+  await text.press('Space');
+  const content = window.getByLabel('Содержание');
+  await content.fill('Текст сохраняется');
+  await text.click();
+  await expect(content).toBeHidden();
+  await text.click();
+  await expect(content).toHaveValue('Текст сохраняется');
   expect(runtimeErrors).toEqual([]);
 });
 
@@ -421,7 +483,8 @@ test('rounds a rectangle and edits its centered text on double click', async () 
   const shape = window.getByTestId('shape-element');
 
   await window.getByLabel('Скругление, px').fill('18');
-  await window.getByLabel('Гарнитура').selectOption('pt-serif');
+  await openInspectorSection('Текст');
+  await window.getByLabel('Шрифт').selectOption('pt-serif');
   await window.getByLabel('Размер, px').fill('20');
   await shape.dblclick();
 
@@ -446,6 +509,7 @@ test('rounds a rectangle and edits its centered text on double click', async () 
 test('keeps selection chrome above an overlapping element with a higher stack position', async () => {
   const textElement = window.getByTestId('text-element').first();
   await textElement.getByRole('textbox', { name: 'Текст на странице' }).click({ position: { x: 2, y: 2 } });
+  await openInspectorSection('Положение');
   const textX = Number(await window.getByLabel('X, мм').inputValue());
   const textY = Number(await window.getByLabel('Y, мм').inputValue());
   const textWidth = Number(await window.getByLabel('Ширина, мм').inputValue());
@@ -453,6 +517,7 @@ test('keeps selection chrome above an overlapping element with a higher stack po
 
   await addElement(/^Прямоугольник/);
   const shapeElement = window.getByTestId('shape-element');
+  await openInspectorSection('Положение');
   await window.getByLabel('X, мм').fill(String(textX + textWidth - 5));
   await window.getByLabel('Y, мм').fill(String(textY));
   await window.getByLabel('Ширина, мм').fill('30');
@@ -511,6 +576,7 @@ test('resizes a table like other canvas components and restores it with Undo', a
   expect(after).not.toBeNull();
   expect(after!.width).toBeGreaterThan(before!.width + 15);
   expect(after!.height).toBeGreaterThan(before!.height + 10);
+  await openInspectorSection('Положение');
   await expect(window.getByLabel('Высота, мм')).toBeVisible();
 
   await window.getByRole('button', { name: 'Отменить' }).click();
@@ -556,19 +622,17 @@ test('resizes table columns, rows and header with cursor and keyboard', async ()
   expect(runtimeErrors).toEqual([]);
 });
 
-test('applies vertical table alignment with row precedence over column', async () => {
+test('keeps table-wide alignment while hiding row and column inspector sections', async () => {
   const table = window.getByTestId('table-element').first();
   await table.locator('.document-table-header').click();
   await window.getByLabel('Высота строки, px').fill('60');
   await window.getByRole('button', { name: 'Расположить текст снизу' }).click();
-  await window.getByLabel('Вертикальное выравнивание колонки 1').selectOption('top');
-
-  await expect.poll(() => table.locator('thead th').first().evaluate((node) => getComputedStyle(node).verticalAlign)).toBe('top');
-  await expect.poll(() => table.locator('thead th').nth(1).evaluate((node) => getComputedStyle(node).verticalAlign)).toBe('bottom');
-
-  await window.getByLabel('Вертикальное выравнивание строки 1').selectOption('middle');
-  await expect.poll(() => table.locator('thead th').first().evaluate((node) => getComputedStyle(node).verticalAlign)).toBe('middle');
-  await expect.poll(() => table.locator('thead th').nth(1).evaluate((node) => getComputedStyle(node).verticalAlign)).toBe('middle');
+  await expect.poll(() => table.locator('thead th').first().evaluate((node) => getComputedStyle(node).verticalAlign)).toBe('bottom');
+  const tableInspector = window.getByRole('region', { name: 'Свойства таблицы' });
+  await expect(tableInspector.getByRole('button', { name: 'Колонки', exact: true })).toHaveCount(0);
+  await expect(tableInspector.getByRole('button', { name: 'Строки', exact: true })).toHaveCount(0);
+  await expect(tableInspector.getByRole('button', { name: 'Добавить строку', exact: true })).toBeVisible();
+  await expect(tableInspector.getByRole('button', { name: 'Добавить колонку', exact: true })).toBeVisible();
   expect(runtimeErrors).toEqual([]);
 });
 
@@ -707,6 +771,7 @@ test('snaps component centers to each other and shows smart guides', async () =>
   await addElement(/^Прямоугольник/);
   const shapes = window.getByTestId('shape-element');
   const target = shapes.first();
+  await openInspectorSection('Положение');
   await window.getByLabel('X, мм').fill('30');
   await window.getByLabel('Y, мм').fill('50');
   await window.getByLabel('Ширина, мм').fill('40');
@@ -714,6 +779,7 @@ test('snaps component centers to each other and shows smart guides', async () =>
 
   await addElement(/^Прямоугольник/);
   const moving = shapes.last();
+  await openInspectorSection('Положение');
   await window.getByLabel('X, мм').fill('100');
   await window.getByLabel('Y, мм').fill('100');
   await window.getByLabel('Ширина, мм').fill('10');
@@ -782,27 +848,27 @@ test('isolates layers and persists text/table styling', async () => {
   await window.getByRole('button', { name: /^Основной \d+$/ }).click();
   const table = window.getByTestId('table-element').first();
   await table.locator('.document-table-header').click();
-  await window.getByLabel('Выравнивание колонки 1', { exact: true }).selectOption('center');
-  await expect.poll(() => table.locator('textarea').first().evaluate((node) => getComputedStyle(node).textAlign)).toBe('center');
-  await window.getByLabel('Выравнивание строки 1', { exact: true }).selectOption('right');
+  await window.getByRole('button', { name: 'Расположить текст справа' }).click();
   await expect.poll(() => table.locator('textarea').first().evaluate((node) => getComputedStyle(node).textAlign)).toBe('right');
 
   await saveFileFromMenu();
   await expect.poll(() => existsSync(projectPath)).toBe(true);
   const saved = JSON.parse(readFileSync(projectPath, 'utf8')) as {
     layers: unknown[];
-    pages: Array<{ elements: Array<{ type: string; layerId: string; style?: { color?: string; columnAlign?: Record<string, string>; rowAlign?: Record<string, string> } }> }>;
+    pages: Array<{ elements: Array<{ type: string; layerId: string; style?: { color?: string; align?: string } }> }>;
   };
   expect(saved.layers).toHaveLength(2);
   expect(saved.pages[0].elements.find((element) => element.type === 'text' && element.style?.color === '#123456')).toBeTruthy();
   const savedTable = saved.pages[0].elements.find((element) => element.type === 'table');
-  expect(Object.values(savedTable?.style?.columnAlign ?? {})).toContain('center');
-  expect(Object.values(savedTable?.style?.rowAlign ?? {})).toContain('right');
+  expect(savedTable?.style?.align).toBe('right');
   expect(runtimeErrors).toEqual([]);
 });
 
 test('lists layer elements and exposes stacking actions', async () => {
-  const layersPanel = window.getByRole('region', { name: 'Слои проекта' });
+  const layersPanel = window.getByRole('region', { name: 'Слои и элементы' });
+  const mainLayerToggle = layersPanel.getByRole('button', { name: 'Раскрыть Основной' });
+  await expect(mainLayerToggle).toHaveAttribute('aria-expanded', 'false');
+  await mainLayerToggle.click();
   const textItem = layersPanel.getByRole('button', { name: 'Текст: Коммерческое предложение' });
   const tableItem = layersPanel.getByRole('button', { name: 'Таблица: Позиции' });
   await expect(textItem).toBeVisible();
@@ -816,9 +882,20 @@ test('lists layer elements and exposes stacking actions', async () => {
   const bringToFront = layersPanel.getByRole('button', { name: 'На передний план' });
   const sendToBack = layersPanel.getByRole('button', { name: 'На задний план' });
   const deleteElement = layersPanel.getByRole('button', { name: 'Удалить', exact: true });
+  const selectedElementRow = tableItem.locator('..');
   await expect(bringToFront).toBeVisible();
   await expect(sendToBack).toBeVisible();
   await expect(deleteElement).toBeVisible();
+  await expect(selectedElementRow).toHaveCSS('background-color', 'rgb(220, 233, 227)');
+  await expect(tableItem).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(tableItem).toHaveCSS('outline-style', 'none');
+  await expect(selectedElementRow).toHaveCSS('box-shadow', 'rgb(30, 91, 73) 0px 0px 0px 2px inset');
+  const selectedItemBounds = await tableItem.boundingBox();
+  const actionBounds = await bringToFront.locator('..').boundingBox();
+  expect(selectedItemBounds).not.toBeNull();
+  expect(actionBounds).not.toBeNull();
+  expect(actionBounds!.x).toBeGreaterThan(selectedItemBounds!.x);
+  expect(Math.abs(actionBounds!.y - selectedItemBounds!.y)).toBeLessThan(8);
 
   const canvasText = window.getByTestId('text-element').first();
   const canvasTable = window.getByTestId('table-element').first();
@@ -838,7 +915,127 @@ test('lists layer elements and exposes stacking actions', async () => {
   expect(runtimeErrors).toEqual([]);
 });
 
-test('configures table title, header, rows, columns and borders', async () => {
+test('splits, resizes and independently scrolls the right sidebar panes', async () => {
+  await window.setViewportSize({ width: 1440, height: 900 });
+  const inspector = window.getByRole('complementary', { name: 'Инспектор свойств' });
+  const layersPanel = inspector.getByRole('region', { name: 'Слои и элементы' });
+  const propertiesSection = inspector.locator('.sidebar-properties');
+  const layersSection = inspector.locator('.sidebar-structure');
+  const propertiesPane = propertiesSection.locator('.inspector-properties-pane');
+  const layersPane = layersSection.locator('.inspector-layers-pane');
+  const canvasPane = window.getByRole('region', { name: 'Рабочая область документа' });
+  const propertiesSectionBounds = await propertiesSection.boundingBox();
+  const inspectorBounds = await inspector.boundingBox();
+  const propertiesBounds = await propertiesPane.boundingBox();
+  const layersBounds = await layersPane.boundingBox();
+  const layersSectionBounds = await layersSection.boundingBox();
+
+  expect(propertiesSectionBounds).not.toBeNull();
+  expect(inspectorBounds).not.toBeNull();
+  expect(propertiesBounds).not.toBeNull();
+  expect(layersBounds).not.toBeNull();
+  expect(layersSectionBounds).not.toBeNull();
+  expect(propertiesBounds!.y).toBeLessThan(layersBounds!.y);
+  expect(propertiesSectionBounds!.y).toBeGreaterThan(inspectorBounds!.y);
+  expect(layersSectionBounds!.y + layersSectionBounds!.height).toBeLessThan(inspectorBounds!.y + inspectorBounds!.height);
+  expect(layersSectionBounds!.y - (propertiesSectionBounds!.y + propertiesSectionBounds!.height)).toBeGreaterThan(8);
+  await expect(propertiesSection).toHaveCSS('border-radius', '11px');
+  await expect(layersSection).toHaveCSS('border-radius', '11px');
+  await expect(propertiesPane).toHaveCSS('overflow-y', 'auto');
+  await expect(layersPane).toHaveCSS('overflow-y', 'auto');
+  await expect(propertiesPane).toHaveCSS('scrollbar-width', 'thin');
+  await expect(propertiesPane).toHaveCSS('scrollbar-gutter', 'auto');
+  await expect(propertiesPane).toHaveCSS('scrollbar-color', 'rgba(67, 72, 65, 0.28) rgba(0, 0, 0, 0)');
+  await inspector.getByRole('button', { name: 'Добавить слой' }).focus();
+  await inspector.hover({ position: { x: 20, y: 20 } });
+  await expect(canvasPane).toHaveCSS('scrollbar-color', 'rgba(0, 0, 0, 0) rgba(0, 0, 0, 0)');
+  await canvasPane.hover({ position: { x: 12, y: 12 } });
+  await expect(canvasPane).toHaveCSS('scrollbar-color', 'rgba(67, 72, 65, 0.28) rgba(0, 0, 0, 0)');
+
+  const divider = inspector.getByRole('separator', { name: 'Изменить высоту панелей' });
+  await expect(divider).toHaveAttribute('aria-valuenow', '54');
+  await divider.focus();
+  await window.keyboard.press('ArrowDown');
+  await expect(divider).toHaveAttribute('aria-valuenow', '58');
+
+  const resizedPropertiesBounds = await propertiesSection.boundingBox();
+  expect(resizedPropertiesBounds).not.toBeNull();
+  expect(resizedPropertiesBounds!.height).toBeGreaterThan(propertiesSectionBounds!.height);
+
+  await dragBy(divider, 0, -48);
+  await expect(divider).not.toHaveAttribute('aria-valuenow', '58');
+  const pointerResizedPropertiesBounds = await propertiesSection.boundingBox();
+  expect(pointerResizedPropertiesBounds).not.toBeNull();
+  expect(pointerResizedPropertiesBounds!.height).toBeLessThan(resizedPropertiesBounds!.height);
+
+  const mainLayerToggle = window.getByRole('button', { name: 'Раскрыть Основной' });
+  const textItem = window.getByRole('button', { name: 'Текст: Коммерческое предложение' });
+  await expect(mainLayerToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(textItem).toHaveCount(0);
+
+  await layersPanel.getByRole('button', { name: /^Основной \d+$/ }).click();
+  await expect(mainLayerToggle).toHaveAttribute('aria-expanded', 'false');
+
+  await mainLayerToggle.focus();
+  await window.keyboard.press('Enter');
+  await expect(textItem).toBeVisible();
+
+  await window.getByRole('button', { name: 'Добавить слой' }).click();
+  await expect(window.getByRole('button', { name: 'Раскрыть Слой 2' })).toHaveAttribute('aria-expanded', 'false');
+  await expect(window.getByRole('button', { name: 'Раскрыть Основной' })).toHaveAttribute('aria-expanded', 'false');
+  await expect(textItem).toHaveCount(0);
+
+  await window.getByRole('button', { name: 'Раскрыть Основной' }).click();
+  await window.getByRole('button', { name: 'Таблица: Позиции' }).click();
+  const scrollState = await propertiesPane.evaluate((element) => {
+    element.scrollTop = 160;
+    return { scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight };
+  });
+  expect(scrollState.scrollHeight).toBeGreaterThan(scrollState.clientHeight);
+  expect(scrollState.scrollTop).toBeGreaterThan(0);
+  expect(await layersPane.evaluate((element) => element.scrollTop)).toBe(0);
+
+  await window.setViewportSize({ width: 1100, height: 360 });
+  await expect(inspector.getByRole('heading', { name: 'Свойства' })).toBeVisible();
+  await expect(inspector.getByRole('heading', { name: 'Структура' })).toBeVisible();
+  await expect(divider).toBeVisible();
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('keeps layer visibility, locking, ordering, moving and deletion usable in the accordion', async () => {
+  const layersPanel = window.getByRole('region', { name: 'Слои и элементы' });
+  await window.getByRole('button', { name: 'Добавить слой' }).click();
+
+  await layersPanel.getByRole('button', { name: /^Основной \d+$/ }).click();
+  await layersPanel.getByRole('button', { name: 'Раскрыть Основной' }).click();
+  const textItem = layersPanel.getByRole('button', { name: 'Текст: Коммерческое предложение' });
+  await textItem.click();
+  await layersPanel.getByRole('combobox', { name: 'Переместить элемент в слой' }).selectOption({ label: 'Переместить в: Слой 2' });
+
+  await expect(layersPanel.getByRole('button', { name: 'Свернуть Слой 2' })).toHaveAttribute('aria-expanded', 'true');
+  await expect(textItem).toBeVisible();
+
+  await layersPanel.getByRole('button', { name: 'Скрыть Слой 2' }).click();
+  await expect(layersPanel.getByRole('button', { name: /^Слой 2 \d+$/ })).toBeDisabled();
+  await layersPanel.getByRole('button', { name: 'Раскрыть Слой 2' }).click();
+  await layersPanel.getByRole('button', { name: 'Показать Слой 2' }).click();
+
+  await layersPanel.getByRole('button', { name: 'Заблокировать Слой 2' }).click();
+  await expect(layersPanel.getByRole('button', { name: /^Слой 2 \d+$/ })).toBeDisabled();
+  await layersPanel.getByRole('button', { name: 'Разблокировать Слой 2' }).click();
+
+  await layersPanel.getByRole('button', { name: 'Опустить Слой 2' }).click();
+  await expect(layersPanel.getByRole('button', { name: 'Поднять Слой 2' })).toBeEnabled();
+  await layersPanel.getByRole('button', { name: 'Поднять Слой 2' }).click();
+
+  await layersPanel.getByRole('button', { name: 'Удалить Слой 2' }).click();
+  await expect(layersPanel.getByRole('button', { name: /^Слой 2 \d+$/ })).toHaveCount(0);
+  await layersPanel.getByRole('button', { name: 'Раскрыть Основной' }).click();
+  await expect(layersPanel.getByRole('button', { name: 'Текст: Коммерческое предложение' })).toBeVisible();
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('configures table title, header, rows and borders', async () => {
   const table = window.getByTestId('table-element').first();
   await table.locator('.document-table-header').click();
   await expect(window.getByRole('heading', { name: 'Таблица' })).toBeVisible();
@@ -851,15 +1048,16 @@ test('configures table title, header, rows, columns and borders', async () => {
   await window.getByRole('button', { name: 'Добавить строку', exact: true }).click();
   await window.getByRole('button', { name: 'Добавить строку', exact: true }).click();
   await window.getByRole('checkbox', { name: 'Чередовать цвет строк' }).check();
+  await openInspectorSection('Цвета');
   await window.getByLabel('Чётные строки: HEX').fill('#ddeeff');
   await window.getByLabel('Чётные строки: HEX').press('Enter');
   await window.getByLabel('Размер текста, px').fill('13');
   await window.getByLabel('Высота строки, px').fill('46');
   await window.getByLabel('Отступ ячейки, px').fill('10');
   await window.getByRole('button', { name: 'Расположить текст снизу' }).click();
+  await openInspectorSection('Границы');
   await window.getByLabel('Толщина, px').fill('2');
   await window.getByLabel('Стиль границы').selectOption('dashed');
-  await window.getByLabel('Ширина колонки 1').fill('80');
 
   await expect(table.locator('thead th')).toHaveCount(3);
   await expect(table.locator('tbody tr')).toHaveCount(2);
@@ -894,13 +1092,13 @@ test('opens a clean document preview and returns to editing', async () => {
 
   await window.getByRole('button', { name: 'Открыть предпросмотр' }).click();
   await expect(window.locator('.app-shell')).toHaveClass(/preview-mode/);
-  await expect(window.locator('.inspector-col')).toBeHidden();
+  await expect(window.locator('.editor-sidebar')).toBeHidden();
   await expect(window.locator('.page-meta').first()).toBeHidden();
   await expect(textElement.getByTestId('text-drag-handle')).toHaveCount(0);
 
   await window.getByRole('button', { name: 'Вернуться к редактированию' }).click();
   await expect(window.locator('.app-shell')).not.toHaveClass(/preview-mode/);
-  await expect(window.locator('.inspector-col')).toBeVisible();
+  await expect(window.locator('.editor-sidebar')).toBeVisible();
 });
 
 test('opens and upgrades an existing schemaVersion 1 project', async () => {
@@ -948,7 +1146,7 @@ test('edits fields, alignment, long content, clean preview, reopening and PDF', 
   await window.setViewportSize({ width: 1440, height: 900 });
   await window.screenshot({ path: screenshotPaths.editor, fullPage: false });
 
-  const inspector = window.locator('.inspector-col');
+  const inspector = window.locator('.editor-sidebar');
   const inspectorWidthBefore = (await inspector.boundingBox())?.width ?? 0;
   await dragBy(window.getByRole('separator', { name: 'Изменить ширину правой панели' }), -64, 0);
   await expect.poll(async () => (await inspector.boundingBox())?.width ?? 0).toBeGreaterThan(inspectorWidthBefore + 50);
@@ -960,7 +1158,20 @@ test('edits fields, alignment, long content, clean preview, reopening and PDF', 
   await window.getByLabel('Подпись', { exact: true }).fill('Email клиента');
   await window.getByLabel('Значение').fill('sales.department.with.a.very.long.address@example-company.test');
   await window.getByLabel('Placeholder', { exact: true }).fill('name@example.com');
-  await window.locator('.inspector-block label').filter({ hasText: /^Иконка/ }).locator('select').selectOption('mail');
+  await window.getByRole('button', { name: /^Выбрано / }).click();
+  await window.getByRole('dialog', { name: 'Выбор иконки' }).getByRole('button', { name: 'Почта', exact: true }).click();
+  const iconPickerTrigger = window.getByRole('button', { name: /^Выбрано / });
+  await iconPickerTrigger.click();
+  const iconPicker = window.getByRole('dialog', { name: 'Выбор иконки' });
+  const iconSearch = iconPicker.getByRole('searchbox', { name: 'Поиск иконки' });
+  await iconSearch.fill('Пользователь');
+  await iconSearch.press('Tab');
+  await expect(iconPicker.getByRole('button', { name: 'Очистить поиск' })).toBeFocused();
+  await window.keyboard.press('Tab');
+  await expect(iconPicker.getByRole('button', { name: 'Пользователь', exact: true })).toBeFocused();
+  await window.keyboard.press('Escape');
+  await expect(iconPickerTrigger).toBeFocused();
+  await openInspectorSection('Цвета');
   await window.getByLabel('Иконка: HEX').fill('#c2410c');
   await window.getByLabel('Иконка: HEX').press('Enter');
   await window.getByRole('checkbox', { name: 'Прозрачный фон' }).check();
@@ -976,6 +1187,7 @@ test('edits fields, alignment, long content, clean preview, reopening and PDF', 
   await expect(window.getByRole('button', { name: 'Расположить текст слева' })).toHaveAttribute('aria-pressed', 'false');
   await expect.poll(() => textField.getByRole('textbox').evaluate((node) => getComputedStyle(node).textAlign)).toBe('center');
 
+  await openInspectorSection('Положение');
   const widthControl = window.getByLabel('Ширина, мм');
   await widthControl.fill('112');
   await expect(widthControl).toHaveValue('112');
@@ -1023,14 +1235,14 @@ test('edits fields, alignment, long content, clean preview, reopening and PDF', 
   await addElement(/^Текст Свободный/);
   const newText = window.getByTestId('text-element').last();
   await newText.getByRole('textbox', { name: 'Текст на странице' }).fill('Первая строка с длинным русским текстом\nSecond line with a very long English value that must wrap inside the fixed frame.');
+  await openInspectorSection('Положение');
   await window.getByLabel('Высота, мм').fill('6');
   await expect(newText.locator('.overflow-warning')).toBeVisible();
 
   await window.getByRole('button', { name: 'Открыть предпросмотр' }).click();
   await expect(window.locator('.app-shell')).toHaveClass(/mode-preview/);
-  await expect(window.locator('.inspector-col')).toHaveCount(0);
+  await expect(window.locator('.editor-sidebar')).toHaveCount(0);
   await expect(window.locator('.page-meta')).toHaveCount(0);
-  await expect(window.locator('.hint')).toHaveCount(0);
   await expect(window.getByTestId('editor-overlay')).toHaveCount(0);
   await expect(window.locator('.canvas-col input, .canvas-col textarea, .canvas-col select')).toHaveCount(0);
   await expect(window.getByRole('button', { name: /^Удалить строку/ })).toHaveCount(0);

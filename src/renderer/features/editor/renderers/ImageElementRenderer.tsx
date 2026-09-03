@@ -1,6 +1,7 @@
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { KpAsset, KpImageElement, KpRect, RenderMode } from '@/renderer/domain/model';
 import { ElementFrame } from './ElementFrame';
+import './image-element.css';
 
 type ImageElementRendererProps = {
   asset?: KpAsset;

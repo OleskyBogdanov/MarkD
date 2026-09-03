@@ -1,0 +1,36 @@
+.table-element { overflow: visible; background: transparent; }
+.document-table-header { height: calc(26px * var(--canvas-zoom, 1)); display: flex; align-items: center; min-width: 0; overflow: hidden; padding: 0 calc(5px * var(--canvas-zoom, 1)); color: #4c5048; background: #23241f; font-family: var(--table-font-family, 'MarkD Inter', sans-serif); font-size: calc(10px * var(--canvas-zoom, 1)); font-weight: 750; letter-spacing: 0.08em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.document-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-family: var(--table-font-family, 'MarkD Inter', sans-serif); }
+.document-table th,
+.document-table td { height: var(--table-row-height, calc(34px * var(--canvas-zoom, 1))); min-width: 0; overflow: hidden; border-width: var(--table-border-width, calc(1px * var(--canvas-zoom, 1))); border-style: var(--table-border-style, solid); border-color: #d7d7cf; padding: 0; vertical-align: middle; }
+.document-table textarea,
+.document-table .table-cell-content > span { width: 100%; min-width: 0; display: block; overflow: hidden; border: 0; border-radius: 0; padding: var(--table-cell-padding, calc(7px * var(--canvas-zoom, 1))); color: inherit; background: transparent; font: inherit; font-size: var(--table-font-size, calc(11px * var(--canvas-zoom, 1))); line-height: 1.2; overflow-wrap: anywhere; word-break: break-word; white-space: pre-wrap; resize: none; }
+.table-cell-content { width: 100%; height: var(--table-row-height, calc(34px * var(--canvas-zoom, 1))); min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.document-table textarea { max-height: 100%; min-height: calc(1.2em + 2 * var(--table-cell-padding, calc(7px * var(--canvas-zoom, 1)))); }
+.document-table .table-cell-content > span { height: auto; flex: 0 0 auto; }
+.document-table textarea:focus { outline: calc(1px * var(--canvas-zoom, 1)) solid var(--accent); outline-offset: calc(-1px * var(--canvas-zoom, 1)); background: var(--accent-soft); }
+.table-chrome-actions { position: absolute; top: -36px; right: 0; display: flex; gap: 4px; pointer-events: auto; }
+.table-chrome-actions button,
+.table-row-actions button { width: 30px; height: 30px; min-height: 30px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(57, 62, 53, 0.2); border-radius: 7px; padding: 0; color: #4c5048; background: rgba(255, 254, 250, 0.98); box-shadow: 0 2px 8px rgba(35, 36, 31, 0.14); }
+.table-chrome-actions svg,
+.table-row-actions svg { width: 14px; height: 14px; }
+.table-chrome-actions button svg + svg { width: 9px; margin-left: -6px; }
+.table-row-actions { position: absolute; inset: 0; pointer-events: none; }
+.table-row-actions button { position: absolute; right: -34px; pointer-events: auto; color: var(--danger); }
+.table-resize-guides { position: absolute; inset: 0; pointer-events: none; }
+.table-column-resize-handle,
+.table-row-resize-handle { position: absolute; z-index: 44; border: 0; outline: 0; touch-action: none; }
+.table-column-resize-handle { bottom: 0; width: 14px; margin-left: -7px; cursor: col-resize; }
+.table-row-resize-handle { right: 0; left: 0; height: 14px; margin-top: -7px; cursor: row-resize; }
+.table-column-resize-handle::after,
+.table-row-resize-handle::after { position: absolute; content: ''; background: transparent; transition: background-color 120ms ease, box-shadow 120ms ease; }
+.table-column-resize-handle::after { top: 0; bottom: 0; left: 6px; width: 2px; }
+.table-row-resize-handle::after { top: 6px; right: 0; left: 0; height: 2px; }
+.table-column-resize-handle:hover::after,
+.table-column-resize-handle:focus-visible::after,
+.table-column-resize-handle:active::after,
+.table-row-resize-handle:hover::after,
+.table-row-resize-handle:focus-visible::after,
+.table-row-resize-handle:active::after { background: var(--accent); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.78); }
+.table-column-resize-handle:focus-visible,
+.table-row-resize-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

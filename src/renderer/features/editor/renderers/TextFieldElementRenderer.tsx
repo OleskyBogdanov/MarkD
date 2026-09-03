@@ -5,6 +5,7 @@ import { ElementFrame } from './ElementFrame';
 import { BufferedTextarea } from '@/renderer/components/ui/BufferedTextControl';
 import { useAutoSizeTextarea } from '@/renderer/components/ui/useAutoSizeTextarea';
 import { fontFamilyForId } from '@/renderer/domain/fontRegistry';
+import './field-element.css';
 
 const verticalContentAlign = {
   top: 'start',

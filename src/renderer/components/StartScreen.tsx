@@ -1,5 +1,6 @@
 import { ArrowRight, Clock3, FilePlus2, FileText, FolderOpen } from 'lucide-react';
 import type { RecentProjectSummary } from '@/shared/ipc-channels';
+import './start-screen.css';
 
 type StartScreenProps = {
   recentProjects: RecentProjectSummary[];
@@ -54,7 +55,14 @@ export const StartScreen = ({
             <FolderOpen aria-hidden="true" /> Открыть…
           </button>
         </div>
-        {statusMessage ? <p className={`start-status start-status-${statusKind}`} role="status">{statusMessage}</p> : null}
+        <p
+          className={statusMessage ? `start-status start-status-${statusKind}` : 'sr-only'}
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {statusMessage}
+        </p>
       </section>
 
       <section className="recent-projects" aria-labelledby="recent-projects-title">

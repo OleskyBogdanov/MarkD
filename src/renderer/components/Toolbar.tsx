@@ -1,32 +1,23 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import {
   ChevronDown,
-  Circle,
   Eye,
   EyeOff,
   FileDown,
   FileStack,
-  FileInput,
   FileUp,
-  Image,
-  ListFilter,
   LoaderCircle,
-  Minus,
-  Plus,
   Redo2,
-  SquarePlus,
-  Square,
-  Table2,
   Trash2,
-  Type,
-  Triangle,
   Undo2,
   ZoomIn,
   ZoomOut
 } from 'lucide-react';
 import { Button } from '@/renderer/components/ui/button';
+import { AddElementMenu } from '@/renderer/components/toolbar/AddElementMenu';
 import type { KpSelection } from '@/renderer/store/useEditorStore';
 import type { ShapeKind } from '@/renderer/domain/model';
+import './toolbar.css';
 
 type ToolbarProps = {
   onAddPage: () => void;
@@ -81,29 +72,11 @@ export const Toolbar = ({
   isPreview,
   zoom
 }: ToolbarProps) => {
-  const [isAddMenuOpen, setAddMenuOpen] = useState(false);
   const [isSaveMenuOpen, setSaveMenuOpen] = useState(false);
-  const addMenuRef = useRef<HTMLDivElement>(null);
   const saveMenuRef = useRef<HTMLDivElement>(null);
   const saveMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const saveMenuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const saveMenuFocusIndexRef = useRef(0);
-
-  useEffect(() => {
-    if (!isAddMenuOpen) return;
-    const onPointerDown = (event: PointerEvent): void => {
-      if (event.target instanceof Node && !addMenuRef.current?.contains(event.target)) setAddMenuOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setAddMenuOpen(false);
-    };
-    window.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown);
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [isAddMenuOpen]);
 
   useEffect(() => {
     if (!isSaveMenuOpen) return;
@@ -125,11 +98,6 @@ export const Toolbar = ({
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [isSaveMenuOpen]);
-
-  const runAddAction = (action: () => void): void => {
-    action();
-    setAddMenuOpen(false);
-  };
 
   const openSaveMenu = (focusIndex = 0): void => {
     saveMenuFocusIndexRef.current = focusIndex;
@@ -163,32 +131,16 @@ export const Toolbar = ({
         <Button className="icon-button danger-icon" onClick={onDelete} title="Удалить выбранный" aria-label="Удалить выбранный" disabled={isPreview || selected.type === 'none'}><Trash2 size={16} aria-hidden="true" /></Button>
       </div>
 
-      <div className="add-menu" ref={addMenuRef}>
-        <Button
-          className="add-menu-trigger"
-          onClick={() => setAddMenuOpen((current) => !current)}
-          aria-haspopup="menu"
-          aria-expanded={isAddMenuOpen}
-          disabled={isBusy || isPreview}
-        >
-          <Plus size={16} aria-hidden="true" /> <span>Добавить</span> <ChevronDown size={14} aria-hidden="true" />
-        </Button>
-        {isAddMenuOpen ? (
-          <div className="add-menu-popover" role="menu" aria-label="Добавить элемент">
-            <button type="button" role="menuitem" onClick={() => runAddAction(onAddText)}><Type aria-hidden="true" /><span><strong>Текст</strong><small>Свободный текстовый блок</small></span></button>
-            <button type="button" role="menuitem" onClick={() => runAddAction(onAddTextField)}><FileInput aria-hidden="true" /><span><strong>Текстовое поле</strong><small>Подпись, значение и иконка</small></span></button>
-            <button type="button" role="menuitem" onClick={() => runAddAction(onAddSelectField)}><ListFilter aria-hidden="true" /><span><strong>Выпадающий список</strong><small>Выбор из устойчивых вариантов</small></span></button>
-            <button type="button" role="menuitem" onClick={() => runAddAction(onAddTable)}><Table2 aria-hidden="true" /><span><strong>Таблица</strong><small>Строки и колонки предложения</small></span></button>
-            <button type="button" role="menuitem" onClick={() => runAddAction(onAddImage)}><Image aria-hidden="true" /><span><strong>Изображение</strong><small>PNG, JPG или WebP</small></span></button>
-            <div className="add-menu-section-label" role="presentation">Фигуры</div>
-            <button type="button" role="menuitem" onClick={() => runAddAction(() => onAddShape('rectangle'))}><Square aria-hidden="true" /><span><strong>Прямоугольник</strong><small>Заливка и граница</small></span></button>
-            <button type="button" role="menuitem" onClick={() => runAddAction(() => onAddShape('ellipse'))}><Circle aria-hidden="true" /><span><strong>Эллипс</strong><small>Заливка и граница</small></span></button>
-            <button type="button" role="menuitem" onClick={() => runAddAction(() => onAddShape('triangle'))}><Triangle aria-hidden="true" /><span><strong>Треугольник</strong><small>Заливка и граница</small></span></button>
-            <button type="button" role="menuitem" onClick={() => runAddAction(() => onAddShape('line'))}><Minus aria-hidden="true" /><span><strong>Линия</strong><small>Цвет, толщина и штрих</small></span></button>
-            <button type="button" role="menuitem" onClick={() => runAddAction(onAddPage)}><SquarePlus aria-hidden="true" /><span><strong>Страница</strong><small>Новый чистый лист A4</small></span></button>
-          </div>
-        ) : null}
-      </div>
+      <AddElementMenu
+        disabled={isBusy || isPreview}
+        onAddPage={onAddPage}
+        onAddText={onAddText}
+        onAddTextField={onAddTextField}
+        onAddSelectField={onAddSelectField}
+        onAddTable={onAddTable}
+        onAddImage={onAddImage}
+        onAddShape={onAddShape}
+      />
 
       <div className="toolbar-group toolbar-zoom">
         <Button className="icon-button" onClick={onZoomOut} variant="ghost" title="Уменьшить" aria-label="Уменьшить" disabled={zoom <= 0.5}><ZoomOut size={16} aria-hidden="true" /></Button>

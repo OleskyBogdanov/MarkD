@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">MarkD</title>
+  <path
+    fill="#23241f"
+    d="M224 64h576c88.37 0 160 71.63 160 160v405.49C960 812.04 812.04 960 629.49 960H224c-88.37 0-160-71.63-160-160V224c0-88.37 71.63-160 160-160Z"
+  />
+  <text
+    x="484"
+    y="532"
+    fill="#f7f5ef"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="500"
+    font-style="italic"
+    font-weight="400"
+    text-anchor="middle"
+    dominant-baseline="middle"
+  >M</text>
+</svg>

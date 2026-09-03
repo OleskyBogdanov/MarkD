@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import {
   calculateTableRowsHeightMm,
   type KpElement,
@@ -21,6 +22,7 @@ import { TableElementRenderer } from './renderers/TableElementRenderer';
 import { TextElementRenderer } from './renderers/TextElementRenderer';
 import { TextFieldElementRenderer } from './renderers/TextFieldElementRenderer';
 import { snapRectToPage, type PageSnapGuides } from './snapToPage';
+import './project-canvas.css';
 
 type InteractionMode = 'move' | 'resize';
 
@@ -189,7 +191,25 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
     updateTableRowHeight,
     addAsset,
     addImage
-  } = useEditorStore();
+  } = useEditorStore(useShallow((state) => ({
+    selected: state.selected,
+    activeLayerId: state.activeLayerId,
+    select: state.select,
+    updateElementRect: state.updateElementRect,
+    updateText: state.updateText,
+    updateShape: state.updateShape,
+    updateTextField: state.updateTextField,
+    updateSelectField: state.updateSelectField,
+    addTableRow: state.addTableRow,
+    addTableColumn: state.addTableColumn,
+    deleteTableRow: state.deleteTableRow,
+    deleteTableColumn: state.deleteTableColumn,
+    updateTableCell: state.updateTableCell,
+    resizeTableColumnBoundary: state.resizeTableColumnBoundary,
+    updateTableRowHeight: state.updateTableRowHeight,
+    addAsset: state.addAsset,
+    addImage: state.addImage
+  })));
   const pageRefs = useRef(new Map<string, HTMLDivElement>());
   const dragRef = useRef<ActiveInteraction | null>(null);
   const [draftRects, setDraftRects] = useState<Record<string, KpRect>>({});
@@ -445,7 +465,6 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
           </section>
         );
       })}
-      {renderMode === 'edit' ? <p className="hint">Выберите элемент, чтобы переместить его, изменить размер или настроить свойства.</p> : null}
       <p className="sr-only" role="status" aria-live="polite">{dropMessage}</p>
     </div>
   );

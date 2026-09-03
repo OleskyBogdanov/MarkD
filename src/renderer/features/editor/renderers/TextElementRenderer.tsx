@@ -3,6 +3,7 @@ import type { KpRect, KpTextElement, RenderMode } from '@/renderer/domain/model'
 import { ElementFrame } from './ElementFrame';
 import { BufferedTextarea } from '@/renderer/components/ui/BufferedTextControl';
 import { fontFamilyForId } from '@/renderer/domain/fontRegistry';
+import './text-element.css';
 
 type TextElementRendererProps = {
   element: KpTextElement;

@@ -6,6 +6,7 @@ import {
   type ReactNode
 } from 'react';
 import { Columns3, Plus, Rows3, Trash2 } from 'lucide-react';
+import './table-element.css';
 import {
   calculateTableRowHeightPx,
   clamp,
