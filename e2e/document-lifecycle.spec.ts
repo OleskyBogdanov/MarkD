@@ -5,6 +5,10 @@ import type { MenuCommandPayload } from '../src/shared/ipc-channels';
 import { expect, test } from '@playwright/test';
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright';
 
+// Windows CI needs a visible native window: hidden-window compositor input
+// remains throttled even with Electron backgroundThrottling disabled.
+const hiddenTestWindow = !(process.env.CI && process.platform === 'win32');
+
 let app: ElectronApplication;
 let page: Page;
 let directory: string;
@@ -15,15 +19,13 @@ test.beforeEach(async () => {
   filePath = join(directory, 'document.markd');
   app = await electron.launch({
     args: ['.'],
-    env: { ...process.env, NODE_ENV: 'production', MARKD_USER_DATA_DIR: join(directory, 'profile'), MARKD_E2E_HEADLESS: '1' }
+    env: { ...process.env, NODE_ENV: 'production', MARKD_USER_DATA_DIR: join(directory, 'profile'), MARKD_E2E_HEADLESS: hiddenTestWindow ? '1' : '0' }
   });
   await app.evaluate(({ dialog }, path) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: path });
     dialog.showMessageBox = async () => ({ response: 2, checkboxChecked: false });
   }, filePath);
   page = await app.firstWindow();
-  // Hidden Windows CI windows otherwise throttle animation frames to about 1 Hz.
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setBackgroundThrottling(false));
   await page.getByRole('button', { name: 'Новый проект', exact: true }).click();
 });
 
@@ -114,10 +116,8 @@ test('crash recovery restores the last persisted draft on the next launch', asyn
   await expect.poll(() => { try { return readFileSync(recoveryPath, 'utf8'); } catch { return ''; } }).toContain('Recovered after crash');
   await app.evaluate(({ app: electronApp }) => electronApp.exit(0)).catch(() => {});
   await app.close().catch(() => {});
-  app = await electron.launch({ args: ['.'], env: { ...process.env, NODE_ENV: 'production', MARKD_USER_DATA_DIR: join(directory, 'profile'), MARKD_E2E_HEADLESS: '1' } });
+  app = await electron.launch({ args: ['.'], env: { ...process.env, NODE_ENV: 'production', MARKD_USER_DATA_DIR: join(directory, 'profile'), MARKD_E2E_HEADLESS: hiddenTestWindow ? '1' : '0' } });
   page = await app.firstWindow();
-  // Hidden Windows CI windows otherwise throttle animation frames to about 1 Hz.
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setBackgroundThrottling(false));
   await page.getByRole('button', { name: 'Восстановить черновик' }).click();
   await expect(page.getByRole('textbox', { name: 'Текст на странице', exact: true }).first()).toHaveValue('Recovered after crash');
   await expect(page.getByRole('button', { name: 'Сохранить ·', exact: true })).toBeVisible();

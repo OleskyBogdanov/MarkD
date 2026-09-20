@@ -29,6 +29,10 @@ const screenshotPaths = {
 } as const;
 const shapePanelScreenshotPath = join(testRoot, 'markd-e2e-shape-panel.png');
 
+// Windows CI needs a visible native window: hidden-window compositor input
+// remains throttled even with Electron backgroundThrottling disabled.
+const hiddenTestWindow = !(process.env.CI && process.platform === 'win32');
+
 let electronApp: ElectronApplication;
 let window: Page;
 let runtimeErrors: string[];
@@ -48,7 +52,7 @@ test.beforeEach(async () => {
       ...process.env,
       NODE_ENV: 'production',
       MARKD_USER_DATA_DIR: userDataPath,
-      MARKD_E2E_HEADLESS: '1'
+      MARKD_E2E_HEADLESS: hiddenTestWindow ? '1' : '0'
     }
   });
 
@@ -69,8 +73,6 @@ test.beforeEach(async () => {
   }, { imagePath, pdfPath, projectPath, templatePath });
 
   window = await electronApp.firstWindow();
-  // Hidden Windows CI windows otherwise throttle animation frames to about 1 Hz.
-  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setBackgroundThrottling(false));
   window.on('console', (message) => {
     if (message.type() === 'error' || message.type() === 'warning') {
       runtimeErrors.push(`${message.type()}: ${message.text()}`);
@@ -133,7 +135,7 @@ const pdfPageCount = (path: string): number =>
   readFileSync(path).toString('latin1').match(/\/Type\s*\/Page\b/g)?.length ?? 0;
 
 test('shows the MarkD project screen and preserves history across core actions', async () => {
-  await expect.poll(() => electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible())).toBe(false);
+  await expect.poll(() => electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible())).toBe(!hiddenTestWindow);
   await expect(window).toHaveTitle(/MarkD/);
   await expect(window.getByText('MARKD', { exact: true })).toBeVisible();
   await expect(window.getByText('Выберите элемент, чтобы переместить его, изменить размер или настроить свойства.', { exact: true })).toHaveCount(0);
@@ -260,12 +262,10 @@ test('opens a copied self-contained project on a clean profile', async () => {
       ...process.env,
       NODE_ENV: 'production',
       MARKD_USER_DATA_DIR: transferredUserDataPath,
-      MARKD_E2E_HEADLESS: '1'
+      MARKD_E2E_HEADLESS: hiddenTestWindow ? '1' : '0'
     }
   });
   window = await electronApp.firstWindow();
-  // Hidden Windows CI windows otherwise throttle animation frames to about 1 Hz.
-  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setBackgroundThrottling(false));
   await expect(window.locator('.app-shell')).toBeVisible({ timeout: 15_000 });
   await expect(window.getByText(/Открыт markd-e2e-transferred.markd/)).toBeVisible();
   await expect(window.getByTestId('image-element').locator('img')).toBeVisible();
