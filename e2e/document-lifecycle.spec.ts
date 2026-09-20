@@ -38,6 +38,14 @@ test.afterEach(async () => {
 const menu = (command: MenuCommandPayload['command']): Promise<void> =>
   app.evaluate(({ BrowserWindow }, value) => BrowserWindow.getAllWindows()[0].webContents.send('menu:command', { command: value }), command);
 
+// close() only initiates the renderer handshake; wait for the actual decision
+// before asserting cancellation or sending another close request.
+const closeAndWaitForDecision = (): Promise<boolean> => app.evaluate(({ BrowserWindow, ipcMain }) =>
+  new Promise<boolean>(resolve => {
+    ipcMain.once('document:closeResponse', (_event, payload: { allow: boolean }) => resolve(payload.allow));
+    BrowserWindow.getAllWindows()[0].close();
+  }));
+
 const storedText = (): string => {
   const project = JSON.parse(readFileSync(filePath, 'utf8')) as { pages: Array<{ elements: Array<{ type: string; text?: string }> }> };
   return project.pages[0].elements.find(element => element.type === 'text')?.text ?? '';
@@ -58,7 +66,7 @@ test('immediate save includes the last characters without leaving the field', as
 
 test('cancel keeps a dirty native window open', async () => {
   await page.getByRole('textbox', { name: 'Текст на странице', exact: true }).first().fill('Unsaved');
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+  expect(await closeAndWaitForDecision()).toBe(false);
   await expect(page.getByRole('textbox', { name: 'Текст на странице', exact: true }).first()).toHaveValue('Unsaved');
   await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
 });
@@ -89,14 +97,14 @@ test('save-dialog cancellation and write errors keep the document open', async (
     dialog.showMessageBox = async () => ({ response: 0, checkboxChecked: false });
     dialog.showSaveDialog = async () => ({ canceled: true, filePath: undefined });
   });
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+  expect(await closeAndWaitForDecision()).toBe(false);
   await expect(page.locator('[inert]')).toHaveCount(0);
   await expect(text).toHaveValue('Keep me');
   await app.evaluate(({ ipcMain }) => {
     ipcMain.removeHandler('project:saveAs');
     ipcMain.handle('project:saveAs', () => { throw new Error('EACCES: test denied'); });
   });
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+  expect(await closeAndWaitForDecision()).toBe(false);
   await expect(page.getByRole('status').filter({ hasText: 'EACCES' })).toBeVisible();
   await expect(text).toHaveValue('Keep me');
 });
