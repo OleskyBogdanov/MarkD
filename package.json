@@ -1,6 +1,6 @@
 {
   "name": "markd",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "type": "module",
   "packageManager": "npm@11.19.0",
@@ -10,7 +10,7 @@
     "postinstall": "electron-builder install-app-deps",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "lint": "eslint . --max-warnings=0",
-    "test": "vitest run",
+    "test": "vitest run && node --test scripts/release-config.test.mjs",
     "test:e2e": "npm run build && playwright test",
     "build:renderer": "vite build",
     "build:main": "tsc -p tsconfig.main.json",
@@ -138,5 +138,9 @@
     "@parcel/watcher@2.6.0": true,
     "fsevents@2.3.2": true,
     "fsevents@2.3.3": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OleskyBogdanov/MarkD.git"
   }
 }

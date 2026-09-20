@@ -1,8 +1,25 @@
-name: Build signed release candidates
+name: Build signed GitHub release draft
 on:
   workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: markd-release
+  cancel-in-progress: false
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Validate public repository and unused stable version
+        run: node scripts/prepare-github-release.mjs --check
+        env:
+          GH_TOKEN: ${{ github.token }}
   release:
+    needs: preflight
     environment: release
     strategy:
       fail-fast: false
@@ -18,12 +35,12 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
+      - run: npm run deps:deprecated
       - run: npm test
       - run: npm run test:e2e
-      - name: Sign and package (does not publish channel metadata)
+      - name: Sign and package without publishing
         run: npm run package:release
         env:
-          MARKD_UPDATE_URL: ${{ vars.MARKD_UPDATE_URL }}
           MARKD_MAC_IDENTITY: ${{ vars.MARKD_MAC_IDENTITY }}
           MARKD_WINDOWS_PUBLISHER: ${{ vars.MARKD_WINDOWS_PUBLISHER }}
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
@@ -36,14 +53,41 @@ jobs:
       - if: runner.os == 'macOS'
         run: npm run smoke:app
       - if: runner.os == 'Windows'
-        run: npm run smoke:win
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem dist-package/MarkD-Setup-*.exe | Select-Object -First 1).FullName
+          $installDir = "$env:RUNNER_TEMP\MarkD-release-installed"
+          $process = Start-Process -FilePath $installer -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "NSIS failed: $($process.ExitCode)" }
+          $env:MARKD_SMOKE_EXE = "$installDir\MarkD.exe"
+          npm run smoke:win
       - uses: actions/upload-artifact@v4
         with:
           name: release-candidate-${{ matrix.os }}
           path: |
-            dist-package/*.dmg
-            dist-package/*.zip
-            dist-package/*.exe
-            dist-package/*.yml
-            dist-package/*.blockmap
+            dist-package/MarkD-*.dmg
+            dist-package/MarkD-*.zip
+            dist-package/MarkD-*.exe
+            dist-package/MarkD-*.blockmap
+            dist-package/latest*.yml
           if-no-files-found: error
+  draft:
+    needs: release
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-candidate-*
+          merge-multiple: true
+          path: output/release-assets
+      - name: Upload the complete set to a draft (not visible to updater)
+        run: node scripts/prepare-github-release.mjs output/release-assets
+        env:
+          GH_TOKEN: ${{ github.token }}

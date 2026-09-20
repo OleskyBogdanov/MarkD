@@ -8,18 +8,17 @@ import { assertRendererOrigin } from '../ipc/ipcRegistry.js';
 import { approveDocumentClose, requestDocumentClose, resumeDocument } from '../windows/documentLifecycle.js';
 import { writeLog } from '../logging/appLogger.js';
 import { UpdateController } from './updateController.js';
+import { parseReleaseFeed } from './releaseFeed.js';
 
 const { autoUpdater } = updater;
 let controller: UpdateController;
 export const checkForUpdates = (): void => { void controller?.run('check'); };
 export const registerUpdates = (): void => {
   // Only signed release builds contain this build-time configuration.
-  let feed: string | null = null;
+  let feed: ReturnType<typeof parseReleaseFeed> | null = null;
   if (app.isPackaged) {
     try {
-      const config = z.object({ url: z.string().url() }).parse(JSON.parse(readFileSync(join(process.resourcesPath, 'markd-release.json'), 'utf8')));
-      const url = new URL(config.url);
-      if (url.protocol === 'https:' && !url.username && !url.password) feed = url.href;
+      feed = parseReleaseFeed(JSON.parse(readFileSync(join(process.resourcesPath, 'markd-release.json'), 'utf8')), process.platform, process.arch);
     } catch { /* Local packages have no update feed. */ }
   }
   let preparedWindow: BrowserWindow | undefined;
@@ -52,7 +51,7 @@ export const registerUpdates = (): void => {
   autoUpdater.allowPrerelease = false;
   autoUpdater.allowDowngrade = false;
   autoUpdater.disableWebInstaller = true;
-  autoUpdater.setFeedURL({ provider: 'generic', url: feed });
+  autoUpdater.setFeedURL(feed);
   autoUpdater.logger = {
     info: message => writeLog('info', 'update.log', message),
     warn: message => writeLog('warn', 'update.log', message),
