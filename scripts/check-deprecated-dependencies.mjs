@@ -6,6 +6,7 @@ import { URL } from 'node:url';
 const lockfile = JSON.parse(await readFile(new URL('../package-lock.json', import.meta.url), 'utf8'));
 
 const allowed = new Map([
+  ['lodash.isequal@4.5.0', 'electron-updater 6.8.9 (upstream dependency; avoid updater 7 API migration in this release)'],
   ['boolean@3.2.0', 'electron-builder 26 -> @electron/get -> global-agent'],
   ['glob@7.2.3', 'electron-builder 26 -> @electron/asar and electron-winstaller'],
   ['inflight@1.0.6', 'electron-builder 26 -> @electron/asar -> glob'],
@@ -45,5 +46,5 @@ if (unexpected.length > 0 || stale.length > 0) {
 
   process.exitCode = 1;
 } else {
-  console.log(`Deprecated dependency allowlist is exact (${deprecated.size} known electron-builder 26 packages).`);
+  console.log(`Deprecated dependency allowlist is exact (${deprecated.size} known packaging/updater packages).`);
 }

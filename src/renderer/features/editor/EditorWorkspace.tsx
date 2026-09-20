@@ -1,4 +1,7 @@
 import { AlertCircle, CheckCircle2, EyeOff, LoaderCircle, ZoomIn, ZoomOut } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { PageNavigator } from './PageNavigator';
+import { mmToPx } from '@/renderer/domain/model';
 import type { ComponentProps, CSSProperties, PointerEvent } from 'react';
 import type { KpProject, RenderMode } from '@/renderer/domain/model';
 import { InspectorResizeHandle } from '@/renderer/components/InspectorResizeHandle';
@@ -60,7 +63,7 @@ const PreviewHeader = ({
   <header className="preview-header" aria-label="Панель предпросмотра">
     <span>Предпросмотр документа</span>
     <div>
-      <button type="button" aria-label="Уменьшить" title="Уменьшить" onClick={() => onZoomChange(Math.max(0.5, zoom - 0.1))} disabled={zoom <= 0.5}><ZoomOut size={16} aria-hidden="true" /></button>
+      <button type="button" aria-label="Уменьшить" title="Уменьшить" onClick={() => onZoomChange(Math.max(0.25, zoom - 0.1))} disabled={zoom <= 0.25}><ZoomOut size={16} aria-hidden="true" /></button>
       <strong aria-label={`Масштаб ${Math.round(zoom * 100)} процентов`}>{Math.round(zoom * 100)}%</strong>
       <button type="button" aria-label="Увеличить" title="Увеличить" onClick={() => onZoomChange(Math.min(2, zoom + 0.1))} disabled={zoom >= 2}><ZoomIn size={16} aria-hidden="true" /></button>
       <button type="button" className="exit-preview-button" aria-label="Вернуться к редактированию" title="Вернуться к редактированию" onClick={onTogglePreview}><EyeOff size={16} aria-hidden="true" /> Вернуться</button>
@@ -105,6 +108,17 @@ export const EditorWorkspace = ({
 }: EditorWorkspaceProps) => {
   const select = useEditorStore((state) => state.select);
   const isPreview = renderMode === 'preview';
+  const [sidebarVisible, setSidebarVisible] = useState(true);
+  const [pageError, setPageError] = useState('');
+  const canvasRef = useRef<HTMLElement>(null);
+  const fit = (whole: boolean): void => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const current = project.pages.find(page => page.id === useEditorStore.getState().activePageId) ?? project.pages[0];
+    const width = (canvas.clientWidth - 80) / mmToPx(current.widthMm);
+    const height = (canvas.clientHeight - 90) / mmToPx(current.heightMm);
+    onZoomChange(Math.max(0.25, Math.min(2, whole ? Math.min(width, height) : width)));
+  };
 
   const handleCanvasPointerDown = (event: PointerEvent<HTMLElement>): void => {
     const target = event.target;
@@ -114,7 +128,7 @@ export const EditorWorkspace = ({
 
   return (
     <div
-      className={`app-shell mode-${renderMode} ${isPreview ? 'preview-mode' : ''}`}
+      className={`app-shell mode-${renderMode} ${isPreview ? 'preview-mode' : ''} ${!sidebarVisible ? 'sidebar-hidden' : ''}`}
       style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}
     >
       {renderMode === 'edit' ? (
@@ -123,15 +137,25 @@ export const EditorWorkspace = ({
         <PreviewHeader zoom={zoom} onTogglePreview={onTogglePreview} onZoomChange={onZoomChange} />
       ) : null}
 
+      {renderMode !== 'print' ? <div className="workspace-controls">
+        {renderMode === 'edit' ? <PageNavigator onError={setPageError} /> : null}
+        <div className="view-controls">
+          <button type="button" onClick={() => fit(false)}>По ширине</button>
+          <button type="button" onClick={() => fit(true)}>Вся страница</button>
+          {renderMode === 'edit' ? <button type="button" aria-pressed={sidebarVisible} onClick={() => setSidebarVisible(value => !value)}>Свойства</button> : null}
+        </div>
+        {pageError ? <span role="alert">{pageError}</span> : null}
+      </div> : null}
       <main className="app-main">
         <section
+          ref={canvasRef}
           className="canvas-col"
           aria-label="Рабочая область документа"
           onPointerDown={renderMode === 'edit' ? handleCanvasPointerDown : undefined}
         >
           <ProjectCanvas project={project} zoom={zoom} renderMode={renderMode} />
         </section>
-        {renderMode === 'edit' ? (
+        {renderMode === 'edit' && sidebarVisible ? (
           <>
             <InspectorResizeHandle width={inspectorWidth} onChange={onInspectorWidthChange} />
             <EditorSidebar />
@@ -139,7 +163,7 @@ export const EditorWorkspace = ({
         ) : null}
       </main>
 
-      {renderMode === 'edit' ? <OperationToast operation={operation} /> : null}
+      {renderMode !== 'print' ? <OperationToast operation={operation} /> : null}
     </div>
   );
 };

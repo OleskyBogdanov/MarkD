@@ -1,17 +1,19 @@
-import { copyFileSync, existsSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdtempSync, copyFileSync, existsSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { _electron as electron, type ElectronApplication, type Locator, type Page } from 'playwright';
 
-const projectPath = '/private/tmp/markd-e2e-proposal.markd';
-const legacyProjectPath = '/private/tmp/markd-e2e-legacy.kpdoc';
-const convertedLegacyProjectPath = '/private/tmp/markd-e2e-legacy.markd';
-const templatePath = '/private/tmp/markd-e2e-template.markd';
-const pdfPath = '/private/tmp/markd-e2e-proposal.pdf';
-const userDataPath = '/private/tmp/markd-e2e-user-data';
-const transferredProjectPath = '/private/tmp/markd-e2e-transferred.markd';
-const transferredUserDataPath = '/private/tmp/markd-e2e-transferred-user-data';
-const imagePath = '/System/Library/Automator/Send Birthday Greetings.action/Contents/Resources/4.jpg';
+const testRoot = mkdtempSync(join(tmpdir(), 'markd-editor-'));
+const projectPath = join(testRoot, 'markd-e2e-proposal.markd');
+const legacyProjectPath = join(testRoot, 'markd-e2e-legacy.kpdoc');
+const convertedLegacyProjectPath = join(testRoot, 'markd-e2e-legacy.markd');
+const templatePath = join(testRoot, 'markd-e2e-template.markd');
+const pdfPath = join(testRoot, 'markd-e2e-proposal.pdf');
+const userDataPath = join(testRoot, 'markd-e2e-user-data');
+const transferredProjectPath = join(testRoot, 'markd-e2e-transferred.markd');
+const transferredUserDataPath = join(testRoot, 'markd-e2e-transferred-user-data');
+const imagePath = resolve('build/icon.png');
 const bundledFontFamilies = [
   'MarkD Golos Text', 'MarkD Inter', 'MarkD Roboto', 'MarkD Open Sans', 'MarkD Montserrat',
   'MarkD Manrope', 'MarkD PT Sans', 'MarkD Noto Sans', 'MarkD Source Sans 3', 'MarkD Rubik',
@@ -19,13 +21,13 @@ const bundledFontFamilies = [
   'MarkD Lora', 'MarkD Playfair Display', 'MarkD Literata', 'MarkD JetBrains Mono', 'MarkD Roboto Mono'
 ] as const;
 const screenshotPaths = {
-  editor: '/private/tmp/markd-e2e-editor.png',
-  field: '/private/tmp/markd-e2e-text-field.png',
-  table: '/private/tmp/markd-e2e-table-long.png',
-  preview: '/private/tmp/markd-e2e-preview.png',
-  narrow: '/private/tmp/markd-e2e-narrow.png'
+  editor: join(testRoot, 'markd-e2e-editor.png'),
+  field: join(testRoot, 'markd-e2e-text-field.png'),
+  table: join(testRoot, 'markd-e2e-table-long.png'),
+  preview: join(testRoot, 'markd-e2e-preview.png'),
+  narrow: join(testRoot, 'markd-e2e-narrow.png')
 } as const;
-const shapePanelScreenshotPath = '/private/tmp/markd-e2e-shape-panel.png';
+const shapePanelScreenshotPath = join(testRoot, 'markd-e2e-shape-panel.png');
 
 let electronApp: ElectronApplication;
 let window: Page;
@@ -44,14 +46,14 @@ test.beforeEach(async () => {
     cwd: process.cwd(),
     env: {
       ...process.env,
-      NODE_ENV: 'development',
-      VITE_DEV_SERVER_URL: 'http://127.0.0.1:40173',
+      NODE_ENV: 'production',
       MARKD_USER_DATA_DIR: userDataPath,
       MARKD_E2E_HEADLESS: '1'
     }
   });
 
   await electronApp.evaluate(async ({ dialog }, paths) => {
+    dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
     dialog.showOpenDialog = async (_baseWindow, options) => ({
       canceled: false,
       filePaths: [options?.filters?.some((filter) => filter.extensions?.some((extension) => extension === 'markd' || extension === 'kpdoc')) ? paths.projectPath : paths.imagePath]
@@ -78,8 +80,11 @@ test.beforeEach(async () => {
   await window.locator('.app-shell').waitFor({ state: 'visible', timeout: 15_000 });
 });
 
+test.afterAll(() => rmSync(testRoot, { recursive: true, force: true }));
+
 test.afterEach(async () => {
-  await electronApp?.close();
+  await electronApp?.evaluate(({ app }) => app.exit(0)).catch(() => {});
+  await electronApp?.close().catch(() => {});
 });
 
 const dragBy = async (handle: Locator, deltaX: number, deltaY: number): Promise<void> => {
@@ -109,7 +114,6 @@ const openInspectorSection = async (name: string): Promise<Locator> => {
 
 const saveFileFromMenu = async (): Promise<void> => {
   await window.getByRole('button', { name: /^Сохранить(?: ·)?$/ }).click();
-  await window.getByRole('menuitem', { name: /^Сохранить файл/ }).click();
 };
 
 const pdfPageCount = (path: string): number =>
@@ -133,6 +137,7 @@ test('shows the MarkD project screen and preserves history across core actions',
 
   const pages = window.getByTestId('editor-page');
   const textElements = window.getByTestId('text-element');
+  await expect(pages).toHaveCount(1);
   const initialPageCount = await pages.count();
   const initialTextCount = await textElements.count();
 
@@ -184,13 +189,13 @@ test('saves a template copy and keeps Command or Control S bound to file saving'
   await window.getByRole('menuitem', { name: /^Сохранить как шаблон/ }).click();
   await expect.poll(() => existsSync(templatePath)).toBe(true);
   await expect(window.getByText(/Шаблон сохранён:/)).toBeVisible();
-  await expect(saveTrigger).toHaveAccessibleName('Сохранить ·');
+  await expect(window.getByRole('button', { name: 'Сохранить ·', exact: true })).toBeVisible();
   expect(existsSync(projectPath)).toBe(false);
 
   await window.keyboard.press(process.platform === 'darwin' ? 'Meta+S' : 'Control+S');
   await expect.poll(() => existsSync(projectPath)).toBe(true);
   await expect(window.getByText(/Сохранено:/)).toBeVisible();
-  await expect(saveTrigger).toHaveAccessibleName('Сохранить');
+  await expect(window.getByRole('button', { name: 'Сохранить', exact: true })).toBeVisible();
   expect(runtimeErrors).toEqual([]);
 });
 
@@ -240,8 +245,7 @@ test('opens a copied self-contained project on a clean profile', async () => {
     cwd: process.cwd(),
     env: {
       ...process.env,
-      NODE_ENV: 'development',
-      VITE_DEV_SERVER_URL: 'http://127.0.0.1:40173',
+      NODE_ENV: 'production',
       MARKD_USER_DATA_DIR: transferredUserDataPath,
       MARKD_E2E_HEADLESS: '1'
     }
@@ -1246,7 +1250,7 @@ test('edits fields, alignment, long content, clean preview, reopening and PDF', 
   await expect(window.getByTestId('editor-overlay')).toHaveCount(0);
   await expect(window.locator('.canvas-col input, .canvas-col textarea, .canvas-col select')).toHaveCount(0);
   await expect(window.getByRole('button', { name: /^Удалить строку/ })).toHaveCount(0);
-  await expect(window.locator('.status-toast')).toHaveCount(0);
+  await expect(window.locator('.app-shell > [role="status"]')).toHaveCount(1);
   await expect(window.getByText('sales.department.with.a.very.long.address@example-company.test')).toBeVisible();
   await expect(textField.locator('.field-label')).toHaveCount(0);
   await expect.poll(() => textField.locator('.field-presentation').evaluate((node) => ({

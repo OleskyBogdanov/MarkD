@@ -1,0 +1,49 @@
+name: Build signed release candidates
+on:
+  workflow_dispatch:
+jobs:
+  release:
+    environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run test:e2e
+      - name: Sign and package (does not publish channel metadata)
+        run: npm run package:release
+        env:
+          MARKD_UPDATE_URL: ${{ vars.MARKD_UPDATE_URL }}
+          MARKD_MAC_IDENTITY: ${{ vars.MARKD_MAC_IDENTITY }}
+          MARKD_WINDOWS_PUBLISHER: ${{ vars.MARKD_WINDOWS_PUBLISHER }}
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      - if: runner.os == 'macOS'
+        run: npm run smoke:app
+      - if: runner.os == 'Windows'
+        run: npm run smoke:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-${{ matrix.os }}
+          path: |
+            dist-package/*.dmg
+            dist-package/*.zip
+            dist-package/*.exe
+            dist-package/*.yml
+            dist-package/*.blockmap
+          if-no-files-found: error

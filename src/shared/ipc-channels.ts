@@ -11,7 +11,21 @@ export const IPC_CHANNEL = {
   SET_DIRTY: 'project:setDirty',
   LOG_RENDERER_ERROR: 'diagnostics:rendererError',
   MENU_CMD: 'menu:command',
-  OPEN_PROJECT_FROM_OS: 'project:openFromOs'
+  OPEN_PROJECT_FROM_OS: 'project:openFromOs',
+  REQUEST_CLOSE: 'document:requestClose',
+  CLOSE_ACK: 'document:closeAck',
+  CLOSE_RESPONSE: 'document:closeResponse',
+  CONFIRM_SAVE: 'document:confirmSave',
+  RECOVERY_READ: 'recovery:read',
+  RECOVERY_WRITE: 'recovery:write',
+  RECOVERY_CLEAR: 'recovery:clear',
+  REVEAL_PROJECT: 'project:reveal',
+  CLOSE_CANCELLED: 'document:closeCancelled',
+  UPDATE_SHOW: 'update:show',
+  UPDATE_GET: 'update:get',
+  UPDATE_ACTION: 'update:action',
+  UPDATE_STATE: 'update:state',
+  NATIVE_EDIT: 'document:nativeEdit'
 } as const;
 
 export type RendererErrorPayload = {
@@ -21,8 +35,50 @@ export type RendererErrorPayload = {
 };
 
 export type MenuCommandPayload = {
-  command: 'undo' | 'redo' | 'new-document' | 'save' | 'open' | 'export-pdf' | 'delete';
+  command: 'undo' | 'redo' | 'new-document' | 'save' | 'save-as' | 'open' | 'export-pdf' | 'delete' | 'duplicate';
 };
+
+export type CloseRequest = { id: string };
+export type RecoveryRecord = { snapshot: string; path: string | null; savedAt: string };
+export type SaveDecision = 'save' | 'discard' | 'cancel';
+
+export type UpdateState = {
+  status: 'disabled' | 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'error';
+  currentVersion: string;
+  version?: string;
+  percent?: number;
+  notes?: string;
+  message?: string;
+};
+
+export interface DesktopApi {
+  onShowUpdates: (handler: () => void) => () => void;
+  getUpdateState: () => Promise<UpdateState>;
+  updateAction: (command: 'check' | 'download' | 'install') => Promise<UpdateState>;
+  onUpdateState: (handler: (state: UpdateState) => void) => () => void;
+  onCloseCancelled: (handler: () => void) => () => void;
+  openProject: () => Promise<OpenProjectResult | null>;
+  openRecentProject: (id: string) => Promise<OpenProjectResult>;
+  saveProject: (snapshot: string, path?: string | null) => Promise<string | null>;
+  saveProjectAs: (snapshot: string) => Promise<string | null>;
+  saveTemplate: (snapshot: string) => Promise<string | null>;
+  importImage: () => Promise<ImportImageResult | null>;
+  exportPdf: (snapshot: string) => Promise<string | null>;
+  getRecentProjects: () => Promise<RecentProjectSummary[]>;
+  setDirtyState: (dirty: boolean) => void;
+  reportRendererError: (payload: RendererErrorPayload) => void;
+  onMenuCommand: (handler: (payload: MenuCommandPayload) => void) => () => void;
+  onExternalProjectOpen: (handler: (payload: OpenProjectResult) => void) => () => void;
+  confirmSave: () => Promise<SaveDecision>;
+  onCloseRequest: (handler: (payload: CloseRequest) => void) => () => void;
+  acknowledgeClose: (id: string) => void;
+  respondToClose: (id: string, allow: boolean) => void;
+  readRecovery: () => Promise<RecoveryRecord | null>;
+  writeRecovery: (record: RecoveryRecord) => Promise<void>;
+  clearRecovery: () => Promise<void>;
+  revealProject: (path: string) => Promise<void>;
+  nativeEdit: (command: 'undo' | 'redo' | 'delete') => void;
+}
 
 export type OpenProjectResult = {
   path: string;

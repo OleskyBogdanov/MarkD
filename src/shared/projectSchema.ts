@@ -203,10 +203,15 @@ export const projectSchema = z.object({
   metadata: metadataV4Schema,
   orientation: z.enum(['portrait', 'landscape']),
   layers: z.array(layerSchema).min(1),
-  pages: z.array(pageSchema),
+  pages: z.array(pageSchema).min(1),
   assets: z.array(assetSchema),
   styles: z.record(z.string(), z.unknown()).default({})
 }).superRefine((project, context) => {
+  const unique = (ids: string[], path: (string | number)[], message: string): void => {
+    if (new Set(ids).size !== ids.length) context.addIssue({ code: 'custom', path, message });
+  };
+  unique(project.pages.map(page => page.id), ['pages'], 'ID страниц должны быть уникальны');
+  const elementIds = new Set<string>();
   const layerIds = new Set(project.layers.map((layer) => layer.id));
   const assetIds = new Set(project.assets.map((asset) => asset.id));
   if (layerIds.size !== project.layers.length) {
@@ -219,6 +224,9 @@ export const projectSchema = z.object({
   project.pages.forEach((page, pageIndex) => {
     page.elements.forEach((element, elementIndex) => {
       const path = ['pages', pageIndex, 'elements', elementIndex];
+      if (elementIds.has(element.id)) context.addIssue({ code: 'custom', path: [...path, 'id'], message: 'ID элементов должны быть уникальны' });
+      elementIds.add(element.id);
+      if (element.type === 'selectField') unique(element.options.map(option => option.id), [...path, 'options'], 'ID вариантов должны быть уникальны');
       if (!layerIds.has(element.layerId)) {
         context.addIssue({ code: z.ZodIssueCode.custom, path: [...path, 'layerId'], message: 'Слой элемента не существует' });
       }
@@ -229,6 +237,8 @@ export const projectSchema = z.object({
         context.addIssue({ code: z.ZodIssueCode.custom, path: [...path, 'selectedOptionId'], message: 'Выбранный вариант не существует' });
       }
       if (element.type === 'table') {
+        unique(element.columns, [...path, 'columns'], 'ID колонок должны быть уникальны');
+        unique(element.rows.map(row => row.id), [...path, 'rows'], 'ID строк должны быть уникальны');
         const columnIds = new Set(element.columns);
         const rowIds = new Set(element.rows.map((row) => row.id));
         for (const columnId of Object.keys(element.style.columnAlign)) {

@@ -1,377 +1,205 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { migrateProject, serializeProject, type KpProject, type RenderMode } from '@/renderer/domain/model';
+import { serializeProject, type RenderMode } from '@/renderer/domain/model';
+import { flushPendingEdits } from '@/renderer/domain/pendingEdits';
 import { useEditorStore } from './store/useEditorStore';
-import { EditorWorkspace, type OperationState } from './features/editor/EditorWorkspace';
+import { EditorWorkspace } from './features/editor/EditorWorkspace';
+import { useDocumentSession } from './features/editor/useDocumentSession';
+import { UpdatesPanel } from './components/UpdatesPanel';
 import { StartScreen } from './components/StartScreen';
-import type { OpenProjectResult, RecentProjectSummary } from '@/shared/ipc-channels';
+import type { MenuCommandPayload, OpenProjectResult, RecentProjectSummary } from '@/shared/ipc-channels';
 
-const fileNameFromPath = (path: string): string => path.split(/[\\/]/).at(-1) ?? path;
-
-const waitForDocumentPaint = async (): Promise<void> => new Promise((resolve) => {
+const waitForDocumentPaint = async (): Promise<void> => new Promise(resolve => {
   window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
 });
-
-const serializeForSave = (project: KpProject): string => serializeProject({
-  ...project,
-  metadata: { ...project.metadata, updatedAt: new Date().toISOString() }
-});
+const isTextEditing = (): boolean => document.activeElement instanceof HTMLElement &&
+  Boolean(document.activeElement.closest('input, textarea, [contenteditable="true"]'));
 
 export const App = () => {
-  const {
-    project,
-    selected,
-    select,
-    isDirty,
-    setProject,
-    resetProject,
-    addPage,
-    addText,
-    addTextField,
-    addSelectField,
-    addTable,
-    addImage,
-    addShape,
-    addAsset,
-    setDirty,
-    undo,
-    redo,
-    undoStack,
-    redoStack,
-    deleteSelected,
-    setZoom,
-    zoom
-  } = useEditorStore(useShallow((state) => ({
-    project: state.project,
-    selected: state.selected,
-    select: state.select,
-    isDirty: state.isDirty,
-    setProject: state.setProject,
-    resetProject: state.resetProject,
-    addPage: state.addPage,
-    addText: state.addText,
-    addTextField: state.addTextField,
-    addSelectField: state.addSelectField,
-    addTable: state.addTable,
-    addImage: state.addImage,
-    addShape: state.addShape,
-    addAsset: state.addAsset,
-    setDirty: state.setDirty,
-    undo: state.undo,
-    redo: state.redo,
-    undoStack: state.undoStack,
-    redoStack: state.redoStack,
-    deleteSelected: state.deleteSelected,
-    setZoom: state.setZoom,
-    zoom: state.zoom
+  const { project, selected, isDirty, undoStack, redoStack, zoom } = useEditorStore(useShallow(state => ({
+    project: state.project, selected: state.selected, isDirty: state.isDirty,
+    undoStack: state.undoStack, redoStack: state.redoStack, zoom: state.zoom
   })));
-
-  const [projectPath, setProjectPath] = useState<string | null>(null);
+  const { ready, locked, path, operation, setOperation, recovery, restore, discardRecovery, start, leave, transition, save, reportError } = useDocumentSession();
   const [workspace, setWorkspace] = useState<'home' | 'editor'>('home');
   const [recentProjects, setRecentProjects] = useState<RecentProjectSummary[]>([]);
   const [recentProjectsLoading, setRecentProjectsLoading] = useState(true);
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
-  const [operation, setOperation] = useState<OperationState>({ kind: 'idle', message: '' });
   const [renderMode, setRenderMode] = useState<RenderMode>('edit');
   const [inspectorWidth, setInspectorWidth] = useState(340);
+  const exporting = useRef(false);
   const renderModeBeforePrint = useRef<Exclude<RenderMode, 'print'>>('edit');
-  const saveInProgressRef = useRef(false);
   const isPreview = renderMode === 'preview';
   const isBusy = operation.kind === 'saving' || operation.kind === 'exporting';
-
   const loadRecentProjects = useCallback(async (): Promise<void> => {
     setRecentProjectsLoading(true);
-    try {
-      setRecentProjects(await window.desktop.getRecentProjects());
-    } catch {
-      setRecentProjects([]);
-    } finally {
-      setRecentProjectsLoading(false);
-    }
-  }, []);
+    try { setRecentProjects(await window.desktop.getRecentProjects()); }
+    catch (error) { reportError(error); }
+    finally { setRecentProjectsLoading(false); }
+  }, [reportError]);
 
-  const confirmDiscardChanges = useCallback((): boolean =>
-    !isDirty || window.confirm('Есть несохранённые изменения. Закрыть проект без сохранения?'), [isDirty]);
-
-  const applyOpenedProject = useCallback((payload: OpenProjectResult): void => {
-    const validated = migrateProject(JSON.parse(payload.snapshot));
-    setProject(validated);
-    setProjectPath(payload.path);
-    setDirty(false);
-    setWorkspace('editor');
-    setOperation({ kind: 'success', message: `Открыт ${fileNameFromPath(payload.path)}` });
-    void loadRecentProjects();
-  }, [loadRecentProjects, setDirty, setProject]);
-
-  const togglePreview = useCallback((): void => {
-    const next = renderMode === 'preview' ? 'edit' : 'preview';
-    if (next === 'preview') select({ type: 'none' });
-    setRenderMode(next);
-  }, [renderMode, select]);
-
-  const handleOpenProject = useCallback(async (): Promise<void> => {
-    if (!confirmDiscardChanges()) return;
-    setOperation({ kind: 'idle', message: '' });
-    try {
-      const payload: OpenProjectResult | null = await window.desktop.openProject();
-      if (!payload) return;
-
-      applyOpenedProject(payload);
-    } catch {
-      setOperation({ kind: 'error', message: 'Не удалось открыть документ. Проверьте формат файла.' });
-    }
-  }, [applyOpenedProject, confirmDiscardChanges]);
-
-  const handleOpenRecentProject = useCallback(async (projectId: string): Promise<void> => {
-    if (!confirmDiscardChanges()) return;
-    setOpeningProjectId(projectId);
-    setOperation({ kind: 'idle', message: '' });
-    try {
-      applyOpenedProject(await window.desktop.openRecentProject(projectId));
-    } catch {
-      setOperation({ kind: 'error', message: 'Не удалось открыть проект. Возможно, файл был перемещён.' });
-      await loadRecentProjects();
-    } finally {
-      setOpeningProjectId(null);
-    }
-  }, [applyOpenedProject, confirmDiscardChanges, loadRecentProjects]);
-
-  const handleCreateProject = useCallback((): void => {
-    if (!confirmDiscardChanges()) return;
-    resetProject();
-    setProjectPath(null);
-    setWorkspace('editor');
-    setOperation({ kind: 'success', message: 'Создан новый проект' });
-  }, [confirmDiscardChanges, resetProject]);
-
-  const handleShowProjects = useCallback((): void => {
-    if (!confirmDiscardChanges()) return;
-    select({ type: 'none' });
+  const openEditor = useCallback(async (payload?: OpenProjectResult, kind: 'proposal' | 'blank' | 'template' = 'proposal'): Promise<void> => {
+    await start(payload, kind);
     setRenderMode('edit');
-    setWorkspace('home');
-    setOperation({ kind: 'idle', message: '' });
+    setWorkspace('editor');
     void loadRecentProjects();
-  }, [confirmDiscardChanges, loadRecentProjects, select]);
-
-  const handleSave = useCallback(async (): Promise<void> => {
-    if (saveInProgressRef.current) return;
-    saveInProgressRef.current = true;
-    setOperation({ kind: 'saving', message: 'Сохраняю документ…' });
+  }, [start, loadRecentProjects]);
+  const handleOpen = useCallback((template = false): void => {
+    if (exporting.current || recovery) return;
+    void transition(async () => {
+      const payload = await window.desktop.openProject();
+      if (payload) await openEditor(payload, template ? 'template' : 'proposal');
+    });
+  }, [openEditor, recovery, transition]);
+  const handleCreate = useCallback((kind: 'proposal' | 'blank' = 'proposal'): void => {
+    if (!exporting.current && !recovery) void transition(() => openEditor(undefined, kind));
+  }, [openEditor, recovery, transition]);
+  const handleSave = useCallback(async (mode: 'save' | 'as' | 'copy' | 'template' = 'save'): Promise<void> => {
+    if (workspace !== 'editor' || exporting.current) return;
+    await save(mode);
+    void loadRecentProjects();
+  }, [loadRecentProjects, save, workspace]);
+  const togglePreview = useCallback((): void => {
+    if (exporting.current) return;
     try {
-      const snapshot = serializeForSave(project);
-      const path = projectPath
-        ? await window.desktop.saveProject(snapshot, projectPath)
-        : await window.desktop.saveProjectAs(snapshot);
-
-      if (!path) {
-        setOperation({ kind: 'idle', message: '' });
-        return;
-      }
-
-      setProjectPath(path);
-      setDirty(false);
-      setOperation({ kind: 'success', message: `Сохранено: ${fileNameFromPath(path)}` });
-      void loadRecentProjects();
-    } catch {
-      setOperation({ kind: 'error', message: 'Не удалось сохранить документ. Проверьте доступ к папке.' });
-    } finally {
-      saveInProgressRef.current = false;
-    }
-  }, [loadRecentProjects, project, projectPath, setDirty]);
-
-  const handleSaveTemplate = useCallback(async (): Promise<void> => {
-    if (saveInProgressRef.current) return;
-    saveInProgressRef.current = true;
-    setOperation({ kind: 'saving', message: 'Сохраняю шаблон…' });
-    try {
-      const path = await window.desktop.saveTemplate(serializeForSave(project));
-      if (!path) {
-        setOperation({ kind: 'idle', message: '' });
-        return;
-      }
-
-      setOperation({ kind: 'success', message: `Шаблон сохранён: ${fileNameFromPath(path)}` });
-    } catch {
-      setOperation({ kind: 'error', message: 'Не удалось сохранить шаблон. Проверьте доступ к папке.' });
-    } finally {
-      saveInProgressRef.current = false;
-    }
-  }, [project]);
-
+      flushPendingEdits();
+      useEditorStore.getState().select({ type: 'none' });
+      setRenderMode(mode => mode === 'preview' ? 'edit' : 'preview');
+    } catch (error) { reportError(error); }
+  }, [reportError]);
   const handleExport = useCallback(async (): Promise<void> => {
-    setOperation({ kind: 'exporting', message: 'Готовлю PDF…' });
+    if (workspace !== 'editor' || exporting.current || operation.kind === 'saving') return;
+    exporting.current = true;
     const previousMode = renderMode === 'print' ? renderModeBeforePrint.current : renderMode;
     try {
+      flushPendingEdits();
+      const snapshot = serializeProject(useEditorStore.getState().project);
+      setOperation({ kind: 'exporting', message: 'Готовлю PDF…' });
       renderModeBeforePrint.current = previousMode;
       setRenderMode('print');
       await waitForDocumentPaint();
-      const path = await window.desktop.exportPdf(serializeProject(project));
-      if (!path) {
-        setOperation({ kind: 'idle', message: '' });
-        return;
-      }
-      setOperation({ kind: 'success', message: `PDF готов: ${fileNameFromPath(path)}` });
-    } catch {
-      setOperation({ kind: 'error', message: 'Экспорт PDF не удался. Проверьте макет и повторите.' });
-    } finally {
-      setRenderMode(previousMode);
-    }
-  }, [project, renderMode]);
+      const result = await window.desktop.exportPdf(snapshot);
+      setOperation(result ? { kind: 'success', message: `PDF готов: ${result}` } : { kind: 'idle', message: '' });
+    } catch (error) { reportError(error); }
+    finally { setRenderMode(previousMode); exporting.current = false; }
+  }, [operation.kind, renderMode, reportError, setOperation, workspace]);
 
-  useEffect(() => {
-    if (renderMode !== 'print') renderModeBeforePrint.current = renderMode;
-  }, [renderMode]);
-
-  useEffect(() => {
-    const onBeforePrint = (): void => setRenderMode('print');
-    const onAfterPrint = (): void => setRenderMode(renderModeBeforePrint.current);
-    window.addEventListener('beforeprint', onBeforePrint);
-    window.addEventListener('afterprint', onAfterPrint);
-    return () => {
-      window.removeEventListener('beforeprint', onBeforePrint);
-      window.removeEventListener('afterprint', onAfterPrint);
-    };
-  }, []);
-
-  useEffect(() => {
-    document.title = workspace === 'home' ? 'MarkD' : `${project.metadata.title} — MarkD`;
-  }, [project.metadata.title, workspace]);
-
-  useEffect(() => {
-    void loadRecentProjects();
-  }, [loadRecentProjects]);
-
-  useEffect(() => {
-    if (operation.kind !== 'success') return;
-    const timeout = window.setTimeout(() => setOperation({ kind: 'idle', message: '' }), 4_000);
-    return () => window.clearTimeout(timeout);
-  }, [operation.kind]);
-
-  useEffect(() => {
-    const desktop = window.desktop;
-    if (!desktop) {
-      setOperation({ kind: 'error', message: 'Системный модуль Electron недоступен. Перезапустите приложение.' });
+  const executeCommand = useCallback((command: MenuCommandPayload['command']): void => {
+    if (command === 'new-document') { handleCreate(); return; }
+    if (command === 'open') { handleOpen(); return; }
+    if (workspace !== 'editor' || exporting.current) return;
+    if (command === 'save' || command === 'save-as') { void handleSave(command === 'save' ? 'save' : 'as'); return; }
+    if (command === 'export-pdf') { void handleExport(); return; }
+    if (renderMode !== 'edit') return;
+    if (isTextEditing() && command === 'duplicate') return;
+    if (isTextEditing() && (command === 'undo' || command === 'redo' || command === 'delete')) {
+      window.desktop.nativeEdit(command);
       return;
     }
+    try {
+      flushPendingEdits();
+      const state = useEditorStore.getState();
+      if (command === 'undo') state.undo();
+      if (command === 'redo') state.redo();
+      if (command === 'delete') state.deleteSelected();
+      if (command === 'duplicate') state.duplicateSelected();
+    } catch (error) { reportError(error); }
+  }, [handleCreate, handleExport, handleOpen, handleSave, renderMode, reportError, workspace]);
 
-    desktop.setDirtyState(isDirty);
-  }, [isDirty]);
-
+  useEffect(() => window.desktop.onMenuCommand(({ command }) => executeCommand(command)), [executeCommand]);
   useEffect(() => {
-    const desktop = window.desktop;
-    if (!desktop) return;
-
-    const unsubscribe = desktop.onMenuCommand((payload) => {
-      if (payload.command === 'new-document') {
-        handleCreateProject();
-      }
-      if (payload.command === 'save') void handleSave();
-      if (payload.command === 'open') void handleOpenProject();
-      if (payload.command === 'export-pdf') void handleExport();
-      if (payload.command === 'undo') undo();
-      if (payload.command === 'redo') redo();
-      if (payload.command === 'delete') deleteSelected();
-    });
-
-    return unsubscribe;
-  }, [deleteSelected, handleCreateProject, handleExport, handleOpenProject, handleSave, redo, undo]);
-
-  useEffect(() => {
-    if (workspace !== 'editor') return;
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return;
-      event.preventDefault();
-      if (!event.repeat) void handleSave();
+      if (event.isComposing || event.repeat) return;
+      const modifier = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+      let command: MenuCommandPayload['command'] | undefined;
+      if (modifier && key === 's') command = event.shiftKey ? 'save-as' : 'save';
+      if (modifier && !isTextEditing() && key === 'z') command = event.shiftKey ? 'redo' : 'undo';
+      if (modifier && !isTextEditing() && key === 'y') command = 'redo';
+      if (modifier && !isTextEditing() && key === 'd') command = 'duplicate';
+      if (!modifier && !isTextEditing() && (key === 'delete' || key === 'backspace')) command = 'delete';
+      if (command) { event.preventDefault(); executeCommand(command); }
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [handleSave, workspace]);
+  }, [executeCommand]);
+  useEffect(() => {
+    if (!ready || recovery) return;
+    return window.desktop.onExternalProjectOpen(payload => {
+    if (!exporting.current) void transition(() => openEditor(payload));
+    });
+  }, [openEditor, ready, recovery, transition]);
+  useEffect(() => { void loadRecentProjects(); }, [loadRecentProjects]);
+  useEffect(() => {
+    if (operation.kind !== 'success') return;
+    const timer = window.setTimeout(() => setOperation({ kind: 'idle', message: '' }), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [operation.kind, operation.message, setOperation]);
+  useEffect(() => { document.title = workspace === 'home' ? 'MarkD' : `${isDirty && renderMode !== 'print' ? '● ' : ''}${project.metadata.title} — MarkD`; }, [isDirty, project.metadata.title, renderMode, workspace]);
+  useEffect(() => {
+    if (renderMode !== 'print') renderModeBeforePrint.current = renderMode;
+  }, [renderMode]);
+  useEffect(() => {
+    const before = (): void => { flushPendingEdits(); setRenderMode('print'); };
+    const after = (): void => setRenderMode(renderModeBeforePrint.current);
+    window.addEventListener('beforeprint', before);
+    window.addEventListener('afterprint', after);
+    return () => { window.removeEventListener('beforeprint', before); window.removeEventListener('afterprint', after); };
+  }, []);
 
-  useEffect(() => window.desktop.onExternalProjectOpen((payload) => {
-    if (!confirmDiscardChanges()) return;
+  const addToPage = (action: (pageId: string) => void): void => {
     try {
-      applyOpenedProject(payload);
-    } catch {
-      setOperation({ kind: 'error', message: 'Не удалось открыть документ, переданный системой.' });
-    }
-  }), [applyOpenedProject, confirmDiscardChanges]);
-
-  const onAddText = useCallback((): void => {
-    const pageId = project.pages[0]?.id;
-    if (pageId) addText(pageId);
-  }, [addText, project.pages]);
-
-  const addToFirstPage = useCallback((action: (pageId: string) => void): void => {
-    const pageId = project.pages[0]?.id;
-    if (pageId) action(pageId);
-  }, [project.pages]);
-
-  const onAddImage = useCallback(async (): Promise<void> => {
-    setOperation({ kind: 'idle', message: '' });
+      flushPendingEdits();
+      const state = useEditorStore.getState();
+      const pageId = state.activePageId ?? state.project.pages[0]?.id;
+      if (pageId) action(pageId);
+    } catch (error) { reportError(error); }
+  };
+  const addImage = async (): Promise<void> => {
+    const state = useEditorStore.getState();
+    const pageId = state.activePageId ?? state.project.pages[0]?.id;
     try {
       const image = await window.desktop.importImage();
-      if (!image) return;
+      const current = useEditorStore.getState();
+      if (!image || !pageId || current.sessionId !== state.sessionId || !current.project.pages.some(page => page.id === pageId)) return;
+      current.addAsset(image);
+      current.addImage(pageId, image.id);
+    } catch (error) { reportError(error); }
+  };
 
-      addAsset({ id: image.id, name: image.name, mimeType: image.mimeType, dataUrl: image.dataUrl });
-      const pageId = project.pages[0]?.id;
-      if (pageId) addImage(pageId, image.id);
-    } catch {
-      setOperation({ kind: 'error', message: 'Не удалось импортировать изображение.' });
-    }
-  }, [addAsset, addImage, project.pages]);
+  if (!ready) return <main role="status">Загрузка документа…</main>;
+  if (workspace === 'home') return <div inert={locked}><StartScreen
+    recentProjects={recentProjects} loading={recentProjectsLoading} openingProjectId={openingProjectId}
+    statusMessage={operation.message} statusKind={operation.kind === 'error' ? 'error' : operation.kind === 'success' ? 'success' : 'idle'}
+    recovery={recovery} onRestore={() => { restore(); setRenderMode('edit'); setWorkspace('editor'); }}
+    onDiscardRecovery={() => { void discardRecovery().catch(reportError); }}
+    onCreate={() => handleCreate()} onCreateBlank={() => handleCreate('blank')} onOpenTemplate={() => handleOpen(true)}
+    onOpen={() => handleOpen()} onOpenRecent={projectId => {
+      if (recovery) return;
+      void transition(async () => {
+        setOpeningProjectId(projectId);
+        try { await openEditor(await window.desktop.openRecentProject(projectId)); }
+        finally { setOpeningProjectId(null); void loadRecentProjects(); }
+      });
+    }} /><UpdatesPanel /></div>;
 
-  if (workspace === 'home') {
-    return (
-      <StartScreen
-        recentProjects={recentProjects}
-        loading={recentProjectsLoading}
-        openingProjectId={openingProjectId}
-        statusMessage={operation.message}
-        statusKind={operation.kind === 'error' ? 'error' : operation.kind === 'success' ? 'success' : 'idle'}
-        onCreate={handleCreateProject}
-        onOpen={() => void handleOpenProject()}
-        onOpenRecent={(projectId) => void handleOpenRecentProject(projectId)}
-      />
-    );
-  }
-
-  return (
-    <EditorWorkspace
-      project={project}
-      renderMode={renderMode}
-      zoom={zoom}
-      inspectorWidth={inspectorWidth}
-      operation={operation}
-      onInspectorWidthChange={setInspectorWidth}
-      onShowProjects={handleShowProjects}
-      onTogglePreview={togglePreview}
-      onZoomChange={setZoom}
-      toolbarProps={{
-        onAddPage: addPage,
-        onAddText,
-        onAddTextField: () => addToFirstPage(addTextField),
-        onAddSelectField: () => addToFirstPage(addSelectField),
-        onAddTable: () => addToFirstPage(addTable),
-        onAddImage: () => void onAddImage(),
-        onAddShape: (shape) => addToFirstPage((pageId) => addShape(pageId, shape)),
-        onSaveFile: () => void handleSave(),
-        onSaveTemplate: () => void handleSaveTemplate(),
-        onOpen: () => void handleOpenProject(),
-        selected,
-        onUndo: undo,
-        onRedo: redo,
-        onDelete: deleteSelected,
-        onZoomIn: () => setZoom(Math.min(2, zoom + 0.1)),
-        onZoomOut: () => setZoom(Math.max(0.5, zoom - 0.1)),
-        isDirty,
-        isBusy,
-        onExport: () => void handleExport(),
-        isPreview,
-        onTogglePreview: togglePreview,
-        canUndo: undoStack.length > 0,
-        canRedo: redoStack.length > 0,
-        zoom
-      }}
-    />
-  );
+  const state = useEditorStore.getState();
+  return <div inert={locked}><EditorWorkspace project={project} renderMode={renderMode} zoom={zoom} inspectorWidth={inspectorWidth}
+    operation={operation} onInspectorWidthChange={setInspectorWidth}
+    onShowProjects={() => { if (!exporting.current) void transition(async () => { await leave(); setRenderMode('edit'); setWorkspace('home'); void loadRecentProjects(); }); }}
+    onTogglePreview={togglePreview} onZoomChange={state.setZoom}
+    toolbarProps={{
+      onAddPage: () => addToPage(() => state.addPage()),
+      onAddText: () => addToPage(state.addText), onAddTextField: () => addToPage(state.addTextField),
+      onAddSelectField: () => addToPage(state.addSelectField), onAddTable: () => addToPage(state.addTable),
+      onAddImage: () => { void addImage(); }, onAddShape: shape => addToPage(pageId => state.addShape(pageId, shape)),
+      onSaveFile: () => { void handleSave(); }, onSaveAs: () => { void handleSave('as'); },
+      onSaveCopy: () => { void handleSave('copy'); }, onSaveTemplate: () => { void handleSave('template'); },
+      onReveal: path ? () => { void window.desktop.revealProject(path).catch(reportError); } : undefined,
+      onOpen: () => handleOpen(), selected,
+      onUndo: () => executeCommand('undo'), onRedo: () => executeCommand('redo'), onDelete: () => executeCommand('delete'),
+      onZoomIn: () => state.setZoom(Math.min(2, zoom + 0.1)), onZoomOut: () => state.setZoom(Math.max(0.25, zoom - 0.1)),
+      isDirty, isBusy, onExport: () => { void handleExport(); }, isPreview, onTogglePreview: togglePreview,
+      canUndo: undoStack.length > 0, canRedo: redoStack.length > 0, zoom
+    }} /><UpdatesPanel /></div>;
 };

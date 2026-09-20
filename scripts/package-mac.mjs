@@ -1,5 +1,5 @@
 /* global console */
-import { execFileSync, execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { arch } from 'node:os';
 import { join } from 'node:path';
@@ -12,10 +12,9 @@ const normalized = (() => {
 })();
 
 console.log(`Packaging target arch: ${normalized}`);
-const command = `cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --${normalized} --dir --publish never`;
-execSync(command, { stdio: 'inherit' });
+execFileSync(process.execPath, ['node_modules/electron-builder/out/cli/cli.js', '--mac', `--${normalized}`, '--dir', '--publish', 'never'], { stdio: 'inherit', env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false' } });
 
-const appPath = join(process.cwd(), 'dist-package', `mac-${normalized}`, 'MarkD.app');
+const appPath = join(process.cwd(), 'dist-package', normalized === 'x64' ? 'mac' : 'mac-arm64', 'MarkD.app');
 const frameworkPath = join(appPath, 'Contents', 'Frameworks', 'Electron Framework.framework', 'Electron Framework');
 const asarPath = join(appPath, 'Contents', 'Resources', 'app.asar');
 for (const requiredPath of [frameworkPath, asarPath]) {

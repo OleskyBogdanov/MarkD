@@ -1,10 +1,12 @@
+import { nativeImage } from 'electron';
 import {
   copyFileSync,
   closeSync,
   existsSync,
   fsyncSync,
+  fstatSync,
+  readSync,
   openSync,
-  readFileSync,
   renameSync,
   unlinkSync,
   writeFileSync
@@ -32,6 +34,14 @@ export const detectImageMimeType = (contents: Buffer): AllowedImageMimeType | nu
   return null;
 };
 
+export const validateImageBuffer = (contents: Buffer): { width: number; height: number } => {
+  const image = nativeImage.createFromBuffer(contents);
+  const size = image.getSize();
+  if (image.isEmpty() || size.width <= 0 || size.height <= 0) throw new Error('Изображение повреждено или не декодируется.');
+  if (size.width * size.height > 40_000_000) throw new Error('Изображение превышает лимит 40 мегапикселей.');
+  return size;
+};
+
 const decodeImageDataUrl = (dataUrl: string): { contents: Buffer; mimeType: AllowedImageMimeType } => {
   if (dataUrl.length > MAX_IMAGE_DATA_URL_BYTES) throw new Error('Изображение в проекте превышает лимит 12 МБ.');
   const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]*={0,2})$/.exec(dataUrl);
@@ -43,6 +53,7 @@ const decodeImageDataUrl = (dataUrl: string): { contents: Buffer; mimeType: Allo
   if (!detectedMimeType || detectedMimeType !== declaredMimeType) {
     throw new Error('Тип изображения не соответствует его содержимому.');
   }
+  validateImageBuffer(contents);
   return { contents, mimeType: detectedMimeType };
 };
 
@@ -86,8 +97,21 @@ export const ensureSafeProjectSnapshot = (snapshot: string): string => {
 
 export const readSafeProject = (filePath: string): { path: string; snapshot: string } => {
   if (!isProjectFile(filePath)) throw new Error('Поддерживаются только файлы .markd и .kpdoc.');
-  const raw = readFileSync(filePath, 'utf8');
-  if (Buffer.byteLength(raw, 'utf8') > MAX_PROJECT_BYTES) throw new Error('Слишком большой проектный файл.');
+  const descriptor = openSync(filePath, 'r');
+  let raw: string;
+  try {
+    const size = fstatSync(descriptor).size;
+    if (size > MAX_PROJECT_BYTES) throw new Error('Слишком большой проектный файл.');
+    const buffer = Buffer.alloc(size + 1);
+    let offset = 0;
+    while (offset < buffer.length) {
+      const count = readSync(descriptor, buffer, offset, buffer.length - offset, null);
+      if (!count) break;
+      offset += count;
+    }
+    if (offset > size) throw new Error('Файл изменился во время чтения. Повторите открытие.');
+    raw = buffer.subarray(0, offset).toString('utf8');
+  } finally { closeSync(descriptor); }
   return { path: filePath, snapshot: ensureSafeProjectSnapshot(raw) };
 };
 
@@ -104,18 +128,9 @@ export const writeProjectAtomically = (filePath: string, contents: string): void
     descriptor = null;
 
     if (existsSync(filePath)) copyFileSync(filePath, backupPath);
-    try {
-      renameSync(tempPath, filePath);
-    } catch (replaceError) {
-      if (!existsSync(filePath)) throw replaceError;
-      unlinkSync(filePath);
-      try {
-        renameSync(tempPath, filePath);
-      } catch (writeError) {
-        if (existsSync(backupPath)) copyFileSync(backupPath, filePath);
-        throw writeError;
-      }
-    }
+    // Never remove the destination to work around a failed replacement.
+    // A permission/locking/disk error must leave the previous document intact.
+    renameSync(tempPath, filePath);
   } finally {
     if (descriptor !== null) closeSync(descriptor);
     if (existsSync(tempPath)) unlinkSync(tempPath);

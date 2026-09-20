@@ -1,7 +1,9 @@
+import { registerUpdates, checkForUpdates } from './updates/updateService.js';
 import { app, BrowserWindow, Menu, MenuItemConstructorOptions, protocol, session, shell } from 'electron';
 import { readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { guardDocumentWindow, registerDocumentLifecycle } from './windows/documentLifecycle.js';
 import { createSecureWindow } from './windows/createWindow.js';
 import { IPC_CHANNEL } from '../shared/ipc-channels.js';
 import { openProjectFromPath, registerIpcHandlers } from './ipc/ipcHandlers.js';
@@ -116,8 +118,10 @@ function configureMenu(): void {
     {
       label: 'Команда',
       submenu: [
-        { role: 'undo', label: 'Отменить' },
-        { role: 'redo', label: 'Повторить' },
+        { label: 'Отменить', accelerator: 'CmdOrCtrl+Z', click: (_, window) => { if (window instanceof BrowserWindow) window.webContents.send(IPC_CHANNEL.MENU_CMD, { command: 'undo' }); } },
+        { label: 'Сохранить как…', accelerator: 'CmdOrCtrl+Shift+S', click: (_, window) => { if (window instanceof BrowserWindow) window.webContents.send(IPC_CHANNEL.MENU_CMD, { command: 'save-as' }); } },
+        { label: 'Дублировать объект', accelerator: 'CmdOrCtrl+D', click: (_, window) => { if (window instanceof BrowserWindow) window.webContents.send(IPC_CHANNEL.MENU_CMD, { command: 'duplicate' }); } },
+        { label: 'Повторить', accelerator: 'CmdOrCtrl+Shift+Z', click: (_, window) => { if (window instanceof BrowserWindow) window.webContents.send(IPC_CHANNEL.MENU_CMD, { command: 'redo' }); } },
         { type: 'separator' },
         { role: 'cut', label: 'Вырезать' },
         { role: 'copy', label: 'Копировать' },
@@ -163,7 +167,6 @@ function configureMenu(): void {
         { type: 'separator' },
         {
           label: 'Удалить',
-          accelerator: 'Backspace',
           click: (_, baseWindow) => {
             if (baseWindow && baseWindow instanceof BrowserWindow) {
               baseWindow.webContents.send(IPC_CHANNEL.MENU_CMD, { command: 'delete' });
@@ -175,6 +178,11 @@ function configureMenu(): void {
     {
       label: 'Помощь',
       submenu: [
+        { label: 'Проверить обновления', click: () => {
+          BrowserWindow.getAllWindows()[0]?.webContents.send(IPC_CHANNEL.UPDATE_SHOW);
+          checkForUpdates();
+        } },
+        { role: 'about', label: 'О MarkD' },
         {
           label: 'Показать папку с журналами',
           click: () => {
@@ -194,6 +202,7 @@ function configureMenu(): void {
 function createWindow(): BrowserWindow {
   const window = createSecureWindow();
   installWindowLogging(window);
+  guardDocumentWindow(window);
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   const allowed = isDev && VITE_DEV_SERVER_URL ? VITE_DEV_SERVER_URL : `${scheme}://${host}/`;
@@ -280,6 +289,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   configureSecurity();
   configureMenu();
   registerIpcHandlers();
+  registerDocumentLifecycle();
+  registerUpdates();
   createWindow();
   writeLog('info', 'app.ready');
 }).catch((error: unknown) => {

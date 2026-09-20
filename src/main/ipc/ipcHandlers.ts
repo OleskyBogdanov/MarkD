@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron';
 import { existsSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { basename, extname, join } from 'node:path';
@@ -7,9 +7,11 @@ import { IPC_CHANNEL, type RecentProjectSummary, type SaveProjectArgs } from '..
 import { projectSchema } from '../../shared/projectSchema.js';
 import { assertRendererOrigin, registerIpcChannel } from './ipcRegistry.js';
 import { defaultPdfPath, defaultProjectPath, defaultTemplatePath, ensureMarkdDirectories } from '../storage/markdPaths.js';
+import { readRecovery, writeRecovery, clearRecovery } from '../storage/recoveryService.js';
 import { writeLog } from '../logging/appLogger.js';
 import {
   detectImageMimeType,
+  validateImageBuffer,
   ensureSafeProjectSnapshot,
   isProjectFile,
   MAX_IMAGE_BYTES,
@@ -187,6 +189,29 @@ export const openProjectFromPath = (filePath: string): { path: string; snapshot:
 };
 
 export const registerIpcHandlers = (): void => {
+  ipcMain.handle(IPC_CHANNEL.CONFIRM_SAVE, async event => {
+    const window = withMainWindowFromEvent(event);
+    const result = await dialog.showMessageBox(window, {
+      type: 'question', message: 'Сохранить изменения в документе?',
+      buttons: ['Сохранить', 'Не сохранять', 'Отмена'], defaultId: 0, cancelId: 2, noLink: true
+    });
+    return ['save', 'discard', 'cancel'][result.response] ?? 'cancel';
+  });
+  ipcMain.handle(IPC_CHANNEL.RECOVERY_READ, event => { withMainWindowFromEvent(event); return readRecovery(); });
+  ipcMain.handle(IPC_CHANNEL.RECOVERY_WRITE, (event, record: unknown) => { withMainWindowFromEvent(event); writeRecovery(record); });
+  ipcMain.handle(IPC_CHANNEL.RECOVERY_CLEAR, event => { withMainWindowFromEvent(event); clearRecovery(); });
+  ipcMain.handle(IPC_CHANNEL.REVEAL_PROJECT, (event, path: unknown) => {
+    withMainWindowFromEvent(event);
+    const safePath = z.string().min(1).parse(path);
+    if (!isProjectFile(safePath)) throw new Error('Неверный путь проекта.');
+    shell.showItemInFolder(safePath);
+  });
+  ipcMain.on(IPC_CHANNEL.NATIVE_EDIT, (event, command: unknown) => {
+    const window = withMainWindowFromEvent(event);
+    if (command === 'undo') window.webContents.undo();
+    if (command === 'redo') window.webContents.redo();
+    if (command === 'delete') window.webContents.delete();
+  });
   ipcMain.handle(IPC_CHANNEL.OPEN_PROJECT, async (event) => {
     const window = withMainWindowFromEvent(event);
     const result = await dialog.showOpenDialog(window, {
@@ -312,11 +337,13 @@ export const registerIpcHandlers = (): void => {
     }
 
     const filePath = result.filePaths[0];
+    if (statSync(filePath).size > MAX_IMAGE_BYTES) throw new Error('Изображение превышает лимит 12 МБ.');
     const raw = readFileSync(filePath);
     if (raw.byteLength > MAX_IMAGE_BYTES) {
       throw new Error('Слишком большое изображение (лимит 12 МБ).');
     }
 
+    const dimensions = validateImageBuffer(raw);
     const mimeType = detectImageMimeType(raw);
     if (!mimeType || mimeType === 'image/gif') {
       throw new Error('Файл не является поддерживаемым изображением PNG, JPEG или WebP.');
@@ -325,10 +352,10 @@ export const registerIpcHandlers = (): void => {
 
     const reply = {
       id: `asset_${randomUUID()}`,
-      name: filePath.split('/').at(-1) ?? 'image',
+      name: basename(filePath),
       mimeType,
-      width: 0,
-      height: 0,
+      width: dimensions.width,
+      height: dimensions.height,
       dataUrl
     };
 

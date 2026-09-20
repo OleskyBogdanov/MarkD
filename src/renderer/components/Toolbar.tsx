@@ -28,6 +28,9 @@ type ToolbarProps = {
   onAddImage: () => void;
   onAddShape: (shape: ShapeKind) => void;
   onSaveFile: () => void;
+  onSaveAs: () => void;
+  onSaveCopy: () => void;
+  onReveal?: () => void;
   onSaveTemplate: () => void;
   onOpen: () => void;
   selected: KpSelection;
@@ -55,7 +58,7 @@ export const Toolbar = ({
   onAddImage,
   onAddShape,
   onSaveFile,
-  onSaveTemplate,
+  onSaveTemplate, onSaveAs, onSaveCopy, onReveal,
   onOpen,
   onUndo,
   onRedo,
@@ -143,7 +146,7 @@ export const Toolbar = ({
       />
 
       <div className="toolbar-group toolbar-zoom">
-        <Button className="icon-button" onClick={onZoomOut} variant="ghost" title="Уменьшить" aria-label="Уменьшить" disabled={zoom <= 0.5}><ZoomOut size={16} aria-hidden="true" /></Button>
+        <Button className="icon-button" onClick={onZoomOut} variant="ghost" title="Уменьшить" aria-label="Уменьшить" disabled={zoom <= 0.25}><ZoomOut size={16} aria-hidden="true" /></Button>
         <Button className="icon-button" onClick={onZoomIn} variant="ghost" title="Увеличить" aria-label="Увеличить" disabled={zoom >= 2}><ZoomIn size={16} aria-hidden="true" /></Button>
       </div>
 
@@ -160,6 +163,7 @@ export const Toolbar = ({
 
       <div className="toolbar-group toolbar-file-actions">
         <Button onClick={onOpen} title="Открыть .markd" aria-label="Открыть" variant="ghost" disabled={isBusy}><FileDown size={16} aria-hidden="true" /><span className="button-label">Открыть</span></Button>
+        <Button onClick={onSaveFile} title="Сохранить" aria-label={isDirty ? 'Сохранить ·' : 'Сохранить'} disabled={isBusy} variant="outline">{isBusy ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : <FileUp size={16} aria-hidden="true" />}<span className="button-label">{isDirty ? 'Сохранить ·' : 'Сохранить'}</span></Button>
         <div className="save-menu" ref={saveMenuRef}>
           <Button
             ref={saveMenuTriggerRef}
@@ -167,18 +171,16 @@ export const Toolbar = ({
             onKeyDown={(event) => {
               if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
               event.preventDefault();
-              openSaveMenu(event.key === 'ArrowUp' ? 1 : 0);
+              openSaveMenu(event.key === 'ArrowUp' ? (onReveal ? 4 : 3) : 0);
             }}
             title="Варианты сохранения"
-            aria-label={isDirty ? 'Сохранить ·' : 'Сохранить'}
+            aria-label="Варианты сохранения"
             aria-haspopup="menu"
             aria-expanded={isSaveMenuOpen}
             aria-controls={isSaveMenuOpen ? 'save-menu-popover' : undefined}
             variant="outline"
             disabled={isBusy}
           >
-            {isBusy ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : <FileUp size={16} aria-hidden="true" />}
-            <span className="button-label">{isDirty ? 'Сохранить ·' : 'Сохранить'}</span>
             <ChevronDown className="save-menu-chevron" size={13} aria-hidden="true" />
           </Button>
           {isSaveMenuOpen ? (
@@ -209,6 +211,9 @@ export const Toolbar = ({
                 <FileStack aria-hidden="true" />
                 <span><strong>Сохранить как шаблон</strong><small>Создать отдельную копию .markd</small></span>
               </button>
+              {[{label: 'Сохранить как…', action: onSaveAs}, {label: 'Сохранить копию…', action: onSaveCopy}, ...(onReveal ? [{label: 'Показать файл', action: onReveal}] : [])].map((item, index) => (
+                <button key={item.label} ref={node => { saveMenuItemRefs.current[index + 2] = node; }} type="button" role="menuitem" tabIndex={-1} onClick={() => runSaveAction(item.action)}>{item.label}</button>
+              ))}
             </div>
           ) : null}
         </div>

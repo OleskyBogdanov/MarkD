@@ -189,6 +189,7 @@ export const LayersPanel = () => {
                                 onClick={() => {
                                   if (!active) activateLayer(layer.id);
                                   select({ type: 'element', pageId, elementId: element.id });
+                                  document.querySelector(`[data-page-id="${CSS.escape(pageId)}"]`)?.scrollIntoView({ block: 'start', behavior: 'instant' });
                                 }}
                               >
                                 <span className="layer-element-type">{typeLabel}</span>

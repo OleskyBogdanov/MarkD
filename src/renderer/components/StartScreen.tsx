@@ -1,5 +1,5 @@
 import { ArrowRight, Clock3, FilePlus2, FileText, FolderOpen } from 'lucide-react';
-import type { RecentProjectSummary } from '@/shared/ipc-channels';
+import type { RecentProjectSummary, RecoveryRecord } from '@/shared/ipc-channels';
 import './start-screen.css';
 
 type StartScreenProps = {
@@ -8,6 +8,11 @@ type StartScreenProps = {
   openingProjectId: string | null;
   statusMessage: string;
   statusKind: 'idle' | 'success' | 'error';
+  recovery: RecoveryRecord | null;
+  onRestore: () => void;
+  onDiscardRecovery: () => void;
+  onCreateBlank: () => void;
+  onOpenTemplate: () => void;
   onCreate: () => void;
   onOpen: () => void;
   onOpenRecent: (projectId: string) => void;
@@ -32,6 +37,7 @@ export const StartScreen = ({
   openingProjectId,
   statusMessage,
   statusKind,
+  recovery, onRestore, onDiscardRecovery, onCreateBlank, onOpenTemplate,
   onCreate,
   onOpen,
   onOpenRecent
@@ -47,13 +53,20 @@ export const StartScreen = ({
     <div className="start-content">
       <section className="start-titlebar" aria-labelledby="start-title">
         <h1 id="start-title">Проекты</h1>
+        {recovery ? <section className="recovery-notice" aria-label="Восстановление документа">
+          <p>Найден несохранённый черновик от {formatModifiedAt(recovery.savedAt)}.</p>
+          <button type="button" onClick={onRestore}>Восстановить черновик</button>
+          <button type="button" onClick={onDiscardRecovery}>Удалить черновик</button>
+        </section> : null}
         <div className="start-actions">
-          <button type="button" className="start-primary-action" onClick={onCreate}>
+          <button type="button" className="start-primary-action" disabled={Boolean(recovery)} onClick={onCreate}>
             <FilePlus2 aria-hidden="true" /> Новый проект
           </button>
-          <button type="button" className="start-secondary-action" onClick={onOpen}>
+          <button type="button" className="start-secondary-action" disabled={Boolean(recovery)} onClick={onOpen}>
             <FolderOpen aria-hidden="true" /> Открыть…
           </button>
+          <button type="button" className="start-secondary-action" disabled={Boolean(recovery)} onClick={onCreateBlank}>Пустой документ</button>
+          <button type="button" className="start-secondary-action" disabled={Boolean(recovery)} onClick={onOpenTemplate}>Из шаблона…</button>
         </div>
         <p
           className={statusMessage ? `start-status start-status-${statusKind}` : 'sr-only'}
@@ -81,7 +94,7 @@ export const StartScreen = ({
                 key={project.id}
                 aria-label={`Открыть проект ${project.displayName}`}
                 title={project.path}
-                disabled={openingProjectId !== null}
+                disabled={openingProjectId !== null || Boolean(recovery)}
                 onClick={() => onOpenRecent(project.id)}
               >
                 <span className="recent-card-icon"><FileText aria-hidden="true" /></span>

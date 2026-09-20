@@ -1,9 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { z } from 'zod';
-import { IPC_CHANNEL, OpenProjectResult, SaveProjectArgs, ImportImageResult, MenuCommandPayload, RecentProjectSummary, RendererErrorPayload } from './api-types.js';
+import { IPC_CHANNEL, OpenProjectResult, SaveProjectArgs, ImportImageResult, MenuCommandPayload, RecentProjectSummary, RendererErrorPayload, type DesktopApi } from './api-types.js';
 
 const menuCommandSchema = z.object({
-  command: z.enum(['undo', 'redo', 'new-document', 'save', 'open', 'export-pdf', 'delete'])
+  command: z.enum(['undo', 'redo', 'new-document', 'save', 'save-as', 'open', 'export-pdf', 'delete', 'duplicate'])
 });
 
 const openProjectResultSchema = z.object({ path: z.string().min(1), snapshot: z.string().min(1) });
@@ -20,7 +20,40 @@ ipcRenderer.on(IPC_CHANNEL.OPEN_PROJECT_FROM_OS, (_event, payload: unknown) => {
   externalProjectHandlers.forEach((handler) => handler(parsed.data));
 });
 
-contextBridge.exposeInMainWorld('desktop', {
+const desktop: DesktopApi = {
+  onShowUpdates: handler => {
+    const listener = (): void => handler();
+    ipcRenderer.on(IPC_CHANNEL.UPDATE_SHOW, listener);
+    return () => { ipcRenderer.removeListener(IPC_CHANNEL.UPDATE_SHOW, listener); };
+  },
+  getUpdateState: () => ipcRenderer.invoke(IPC_CHANNEL.UPDATE_GET),
+  updateAction: command => ipcRenderer.invoke(IPC_CHANNEL.UPDATE_ACTION, command),
+  onUpdateState: handler => {
+    const listener = (_event: unknown, state: Parameters<typeof handler>[0]): void => handler(state);
+    ipcRenderer.on(IPC_CHANNEL.UPDATE_STATE, listener);
+    return () => { ipcRenderer.removeListener(IPC_CHANNEL.UPDATE_STATE, listener); };
+  },
+  onCloseCancelled: handler => {
+    const listener = (): void => handler();
+    ipcRenderer.on(IPC_CHANNEL.CLOSE_CANCELLED, listener);
+    return () => { ipcRenderer.removeListener(IPC_CHANNEL.CLOSE_CANCELLED, listener); };
+  },
+  confirmSave: () => ipcRenderer.invoke(IPC_CHANNEL.CONFIRM_SAVE),
+  readRecovery: () => ipcRenderer.invoke(IPC_CHANNEL.RECOVERY_READ),
+  writeRecovery: record => ipcRenderer.invoke(IPC_CHANNEL.RECOVERY_WRITE, record),
+  clearRecovery: () => ipcRenderer.invoke(IPC_CHANNEL.RECOVERY_CLEAR),
+  revealProject: path => ipcRenderer.invoke(IPC_CHANNEL.REVEAL_PROJECT, path),
+  nativeEdit: command => ipcRenderer.send(IPC_CHANNEL.NATIVE_EDIT, command),
+  acknowledgeClose: id => ipcRenderer.send(IPC_CHANNEL.CLOSE_ACK, id),
+  respondToClose: (id, allow) => ipcRenderer.send(IPC_CHANNEL.CLOSE_RESPONSE, { id, allow }),
+  onCloseRequest: handler => {
+    const listener = (_event: unknown, payload: unknown): void => {
+      const parsed = z.object({ id: z.string().uuid() }).safeParse(payload);
+      if (parsed.success) handler(parsed.data);
+    };
+    ipcRenderer.on(IPC_CHANNEL.REQUEST_CLOSE, listener);
+    return () => { ipcRenderer.removeListener(IPC_CHANNEL.REQUEST_CLOSE, listener); };
+  },
   openProject: async (): Promise<OpenProjectResult | null> => {
     return ipcRenderer.invoke(IPC_CHANNEL.OPEN_PROJECT);
   },
@@ -71,4 +104,5 @@ contextBridge.exposeInMainWorld('desktop', {
     });
     return () => externalProjectHandlers.delete(handler);
   }
-});
+};
+contextBridge.exposeInMainWorld('desktop', desktop);

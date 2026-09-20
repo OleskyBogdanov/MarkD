@@ -1,0 +1,42 @@
+name: Verify desktop
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run deps:deprecated
+      - run: npm test
+      - run: npm run test:e2e
+      - if: runner.os == 'macOS'
+        run: npm run package:mac
+      - if: runner.os == 'Windows'
+        run: npm run package:win
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem dist-package/MarkD-Setup-*.exe | Select-Object -First 1).FullName
+          $installDir = "$env:RUNNER_TEMP\MarkD-installed"
+          $process = Start-Process -FilePath $installer -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "NSIS failed: $($process.ExitCode)" }
+          $env:MARKD_SMOKE_EXE = "$installDir\MarkD.exe"
+          npm run smoke:win
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checks-${{ matrix.os }}
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore

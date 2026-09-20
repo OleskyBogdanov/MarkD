@@ -54,3 +54,7 @@
   .start-actions { justify-content: flex-start; }
   .start-status { position: static; }
 }
+
+.start-actions { flex-wrap: wrap; }
+.recovery-notice { padding: 16px; margin: 12px 0; border: 1px solid var(--line); border-radius: 8px; background: #fffefa; }
+.recovery-notice button { min-height: 36px; margin-right: 12px; }

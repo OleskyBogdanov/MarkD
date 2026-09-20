@@ -1,8 +1,11 @@
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ensureSafeProjectSnapshot, readSafeProject, writeProjectAtomically } from '../projectFileService.js';
+
+// Unit tests isolate Electron's native codec; malformed-image decoding is covered in Electron E2E.
+vi.mock('electron', () => ({ nativeImage: { createFromBuffer: () => ({ isEmpty: () => false, getSize: () => ({ width: 1, height: 1 }) }) } }));
 
 const tempDirectories: string[] = [];
 const pixelPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgAH/l5qzVAAAAABJRU5ErkJggg==';
@@ -55,4 +58,12 @@ describe('переносимый файл проекта', () => {
     expect(readFileSync(`${filePath}.bak`, 'utf8')).toBe('previous');
     expect(readSafeProject(filePath).snapshot).toBe(snapshot);
   });
+});
+
+test('rejects ambiguous page and element identifiers', () => {
+  const project = makeProject();
+  project.pages.push(structuredClone(project.pages[0]));
+  expect(() => ensureSafeProjectSnapshot(JSON.stringify(project))).toThrow('ID страниц');
+  project.pages[1].id = 'page-2';
+  expect(() => ensureSafeProjectSnapshot(JSON.stringify(project))).toThrow('ID элементов');
 });

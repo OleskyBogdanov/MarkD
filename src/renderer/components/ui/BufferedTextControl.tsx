@@ -2,6 +2,7 @@ import {
   forwardRef,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -10,6 +11,7 @@ import {
   type InputHTMLAttributes,
   type TextareaHTMLAttributes
 } from 'react';
+import { registerPendingEdit } from '@/renderer/domain/pendingEdits';
 
 type BufferedValue = {
   value: string;
@@ -27,7 +29,7 @@ const useBufferedValue = (value: string, onCommit: (value: string) => void, dela
   const timerRef = useRef<number | null>(null);
   const composingRef = useRef(false);
 
-  useEffect(() => { commitRef.current = onCommit; }, [onCommit]);
+  useLayoutEffect(() => { commitRef.current = onCommit; }, [onCommit]);
   useEffect(() => {
     if (value === committedRef.current) return;
     committedRef.current = value;
@@ -46,6 +48,8 @@ const useBufferedValue = (value: string, onCommit: (value: string) => void, dela
     committedRef.current = next;
     commitRef.current(next);
   }, []);
+
+  useLayoutEffect(() => registerPendingEdit({ flush, isComposing: () => composingRef.current }), [flush]);
 
   const scheduleCommit = useCallback((): void => {
     if (timerRef.current !== null) window.clearTimeout(timerRef.current);

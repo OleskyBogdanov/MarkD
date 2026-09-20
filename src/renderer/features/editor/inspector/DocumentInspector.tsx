@@ -8,7 +8,8 @@ type DocumentInspectorProps = {
 };
 
 export const DocumentInspector = ({ project }: DocumentInspectorProps) => {
-  const firstPage = project.pages[0];
+  const activePageId = useEditorStore(state => state.activePageId);
+  const firstPage = project.pages.find(page => page.id === activePageId) ?? project.pages[0];
 
   return (
     <section className="inspector-panel" aria-label="Свойства документа">
@@ -27,7 +28,7 @@ export const DocumentInspector = ({ project }: DocumentInspectorProps) => {
             />
           </label>
           <ColorControl
-            label="Фон первой страницы"
+            label="Фон текущей страницы"
             value={firstPage?.background?.type === 'color' ? firstPage.background.value : '#ffffff'}
             onChange={(value) => {
               if (firstPage) {

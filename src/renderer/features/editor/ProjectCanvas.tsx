@@ -360,7 +360,8 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
       {paginatedPages.map((page, pageIndex) => {
         const scale = mmToPx(1, 96, zoom);
         return (
-          <section className="page-item" data-testid="editor-page" key={page.id}>
+          <section className="page-item" data-testid="editor-page" data-page-id={page.sourcePageId} key={page.id}
+            onPointerDownCapture={renderMode === 'edit' ? () => useEditorStore.getState().setActivePage(page.sourcePageId) : undefined}>
             {renderMode === 'edit' ? (
               <div className="page-meta" aria-hidden="true">
                 <span>Лист {String(pageIndex + 1).padStart(2, '0')}</span>

@@ -8,14 +8,14 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 const projectRoot = process.cwd();
 const targetArch = arch() === 'arm64' ? 'arm64' : 'x64';
-const appPath = join(projectRoot, 'dist-package', `mac-${targetArch}`, 'MarkD.app');
+const appPath = join(projectRoot, 'dist-package', targetArch === 'x64' ? 'mac' : 'mac-arm64', 'MarkD.app');
 const executablePath = join(appPath, 'Contents', 'MacOS', 'MarkD');
 const userDataRoot = await mkdtemp(join(tmpdir(), 'markd-packaged-smoke-'));
 const logsRoot = join(userDataRoot, 'logs');
 
 const fuseOutput = execFileSync(
-  'npx',
-  ['--no-install', '@electron/fuses', 'read', '--app', appPath],
+  process.execPath,
+  [join(projectRoot, 'node_modules', '@electron', 'fuses', 'dist', 'bin.js'), 'read', '--app', appPath],
   { cwd: projectRoot, encoding: 'utf8' }
 );
 

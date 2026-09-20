@@ -65,6 +65,14 @@ export type EditorState = {
   project: KpProject;
   selected: KpSelection;
   isDirty: boolean;
+  sessionId: number;
+  revision: number;
+  savedRevision: number;
+  activePageId: string | null;
+  markSaved: (sessionId: number, revision: number) => void;
+  setActivePage: (pageId: string) => void;
+  deletePage: (pageId: string) => void;
+  duplicateSelected: () => void;
   undoStack: KpProject[];
   redoStack: KpProject[];
   zoom: number;
@@ -72,7 +80,7 @@ export type EditorState = {
   historyGroup: HistoryGroup | null;
 
   setProject: (project: KpProject) => void;
-  resetProject: () => void;
+  resetProject: (kind?: 'proposal' | 'blank') => void;
   addPage: () => void;
   duplicatePage: (pageId: string) => void;
   movePage: (fromIndex: number, toIndex: number) => void;
@@ -423,6 +431,7 @@ const applyHistory = (
       : [...state.undoStack, state.project].slice(-HISTORY_LIMIT),
     redoStack: [],
     isDirty: true,
+    revision: state.revision + 1,
     historyGroup: historyGroupKey ? { key: historyGroupKey, updatedAt: now } : null
   };
 };
@@ -431,6 +440,10 @@ export const useEditorStore = create<EditorState>((set) => ({
   project: makeDefaultProject(),
   selected: { type: 'none' },
   isDirty: false,
+  sessionId: 0,
+  revision: 0,
+  savedRevision: 0,
+  activePageId: null,
   undoStack: [],
   redoStack: [],
   zoom: 1,
@@ -439,7 +452,8 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   setProject(project) {
     const parsed = projectSchema.parse(project);
-    set({
+    set((state) => ({
+      sessionId: state.sessionId + 1, revision: 0, savedRevision: 0, activePageId: parsed.pages[0]?.id ?? null,
       project: parsed,
       selected: { type: 'none' },
       isDirty: false,
@@ -447,12 +461,14 @@ export const useEditorStore = create<EditorState>((set) => ({
       redoStack: [],
       activeLayerId: preferredActiveLayer(parsed.layers),
       historyGroup: null
-    });
+    }));
   },
 
-  resetProject() {
+  resetProject(kind = 'proposal') {
     const project = makeDefaultProject();
-    set({
+    if (kind === 'blank') { project.pages[0].elements = []; project.metadata.title = 'Новый документ'; }
+    set((state) => ({
+      sessionId: state.sessionId + 1, revision: 0, savedRevision: 0, activePageId: project.pages[0].id,
       project,
       selected: { type: 'none' },
       isDirty: false,
@@ -460,13 +476,15 @@ export const useEditorStore = create<EditorState>((set) => ({
       redoStack: [],
       activeLayerId: preferredActiveLayer(project.layers),
       historyGroup: null
-    });
+    }));
   },
 
   addPage() {
     set((state) =>
       applyHistory(state, (draft) => {
-        draft.project.pages.push(makeDefaultPage());
+        const page = makeDefaultPage();
+        draft.project.pages.push(page);
+        draft.activePageId = page.id;
         return true;
       })
     );
@@ -489,6 +507,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         };
 
         draft.project.pages.splice(index + 1, 0, copy);
+        draft.activePageId = copy.id;
         return true;
       })
     );
@@ -651,7 +670,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       if (selection.type === 'none') return { selected: selection };
       const page = state.project.pages.find((candidate) => candidate.id === selection.pageId);
       const element = page?.elements.find((candidate) => candidate.id === selection.elementId);
-      return { selected: element && elementIsEditable(state, element) ? selection : { type: 'none' as const } };
+      return { selected: element && elementIsEditable(state, element) ? selection : { type: 'none' as const }, activePageId: page?.id ?? state.activePageId };
     });
   },
 
@@ -1406,7 +1425,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   },
 
   setZoom(zoom) {
-    set({ zoom: clampMm(zoom, 0.5, 2) });
+    set({ zoom: clampMm(zoom, 0.25, 2) });
   },
 
   undo() {
@@ -1416,7 +1435,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       }
 
       const previousProject = state.undoStack[state.undoStack.length - 1];
-      const nextRedo = [...state.redoStack, clone(state.project)].slice(-HISTORY_LIMIT);
+      const nextRedo = [...state.redoStack, state.project].slice(-HISTORY_LIMIT);
 
       return {
         ...state,
@@ -1428,6 +1447,8 @@ export const useEditorStore = create<EditorState>((set) => ({
           ? state.activeLayerId
           : preferredActiveLayer(previousProject.layers),
         isDirty: true,
+        revision: state.revision + 1,
+        activePageId: previousProject.pages.some(page => page.id === state.activePageId) ? state.activePageId : previousProject.pages[0]?.id ?? null,
         historyGroup: null
       };
     });
@@ -1440,7 +1461,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       }
 
       const next = state.redoStack[state.redoStack.length - 1];
-      const nextUndo = [...state.undoStack, clone(state.project)].slice(-HISTORY_LIMIT);
+      const nextUndo = [...state.undoStack, state.project].slice(-HISTORY_LIMIT);
 
       return {
         ...state,
@@ -1452,12 +1473,53 @@ export const useEditorStore = create<EditorState>((set) => ({
           ? state.activeLayerId
           : preferredActiveLayer(next.layers),
         isDirty: true,
+        revision: state.revision + 1,
+        activePageId: next.pages.some(page => page.id === state.activePageId) ? state.activePageId : next.pages[0]?.id ?? null,
         historyGroup: null
       };
     });
   },
 
+  markSaved(sessionId, revision) {
+    set(state => state.sessionId === sessionId
+      ? { savedRevision: revision, isDirty: state.revision !== revision, historyGroup: null }
+      : state);
+  },
+
+  setActivePage(pageId) {
+    set(state => state.project.pages.some(page => page.id === pageId) ? { activePageId: pageId } : state);
+  },
+
+  deletePage(pageId) {
+    set(state => applyHistory(state, draft => {
+      if (draft.project.pages.length <= 1) return;
+      const index = draft.project.pages.findIndex(page => page.id === pageId);
+      if (index < 0) return;
+      draft.project.pages.splice(index, 1);
+      draft.activePageId = draft.project.pages[Math.min(index, draft.project.pages.length - 1)].id;
+      draft.selected = { type: 'none' };
+      return true;
+    }));
+  },
+
+  duplicateSelected() {
+    set(state => applyHistory(state, draft => {
+      const selection = draft.selected;
+      if (selection.type !== 'element') return;
+      const page = draft.project.pages.find(item => item.id === selection.pageId);
+      const element = page?.elements.find(item => item.id === selection.elementId);
+      if (!page || !element || !elementIsEditable(draft, element)) return;
+      const copy = clone(element);
+      copy.id = `el_${nanoid(10)}`;
+      copy.rect = { ...copy.rect, x: Math.min(copy.rect.x + 5, Math.max(0, page.widthMm - copy.rect.width)), y: Math.min(copy.rect.y + 5, Math.max(0, page.heightMm - copy.rect.height)) };
+      copy.zIndex = Math.max(...page.elements.map(item => item.zIndex), 0) + 1;
+      page.elements.push(copy);
+      draft.selected = { type: 'element', pageId: page.id, elementId: copy.id };
+      return true;
+    }));
+  },
+
   setDirty(isDirty) {
-    set({ isDirty });
+    set(state => ({ isDirty, revision: state.revision + (isDirty ? 1 : 0), historyGroup: null }));
   }
 }));

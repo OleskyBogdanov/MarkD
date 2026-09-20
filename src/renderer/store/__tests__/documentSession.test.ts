@@ -1,0 +1,30 @@
+import { beforeEach, expect, test } from 'vitest';
+import { useEditorStore } from '../useEditorStore';
+beforeEach(() => useEditorStore.getState().resetProject('blank'));
+test('saving an older revision or another session never clears new edits', () => {
+  const first = useEditorStore.getState();
+  first.updateProjectTitle('one');
+  const saving = useEditorStore.getState();
+  saving.updateProjectTitle('two');
+  saving.markSaved(saving.sessionId, saving.revision);
+  expect(useEditorStore.getState().isDirty).toBe(true);
+  first.resetProject();
+  useEditorStore.getState().updateProjectTitle('new document');
+  first.markSaved(saving.sessionId, 99);
+  expect(useEditorStore.getState().isDirty).toBe(true);
+});
+test('pages retain valid selection across creation, deletion, undo and redo', () => {
+  const store = useEditorStore.getState();
+  store.deletePage(store.project.pages[0].id);
+  expect(useEditorStore.getState().project.pages).toHaveLength(1);
+  store.addPage();
+  const second = useEditorStore.getState().activePageId!;
+  store.addText(second);
+  expect(useEditorStore.getState().project.pages[1].elements).toHaveLength(1);
+  store.deletePage(second);
+  expect(useEditorStore.getState().project.pages).toHaveLength(1);
+  store.undo();
+  expect(useEditorStore.getState().project.pages[1].elements).toHaveLength(1);
+  store.redo();
+  expect(useEditorStore.getState().activePageId).toBe(store.project.pages[0].id);
+});
