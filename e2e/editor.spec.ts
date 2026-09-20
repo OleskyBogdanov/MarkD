@@ -69,6 +69,8 @@ test.beforeEach(async () => {
   }, { imagePath, pdfPath, projectPath, templatePath });
 
   window = await electronApp.firstWindow();
+  // Hidden Windows CI windows otherwise throttle animation frames to about 1 Hz.
+  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setBackgroundThrottling(false));
   window.on('console', (message) => {
     if (message.type() === 'error' || message.type() === 'warning') {
       runtimeErrors.push(`${message.type()}: ${message.text()}`);
@@ -99,6 +101,17 @@ const dragBy = async (handle: Locator, deltaX: number, deltaY: number): Promise<
   await window.mouse.move(startX + deltaX, startY + deltaY, { steps: 6 });
   await window.mouse.up();
 };
+
+// Selection and dragging may scroll the canvas. Compare document coordinates,
+// so viewport scrolling cannot look like an object move (or break Undo checks).
+const positionOnPage = async (element: Locator): Promise<{ x: number; y: number }> =>
+  element.evaluate((node) => {
+    const page = node.closest('.page');
+    if (!page) throw new Error('Canvas element must belong to a document page');
+    const bounds = node.getBoundingClientRect();
+    const pageBounds = page.getBoundingClientRect();
+    return { x: bounds.x - pageBounds.x, y: bounds.y - pageBounds.y };
+  });
 
 const addElement = async (name: RegExp): Promise<void> => {
   await window.getByRole('button', { name: 'Добавить', exact: true }).click();
@@ -251,6 +264,8 @@ test('opens a copied self-contained project on a clean profile', async () => {
     }
   });
   window = await electronApp.firstWindow();
+  // Hidden Windows CI windows otherwise throttle animation frames to about 1 Hz.
+  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setBackgroundThrottling(false));
   await expect(window.locator('.app-shell')).toBeVisible({ timeout: 15_000 });
   await expect(window.getByText(/Открыт markd-e2e-transferred.markd/)).toBeVisible();
   await expect(window.getByTestId('image-element').locator('img')).toBeVisible();
@@ -335,22 +350,21 @@ test('creates, saves and exports a proposal without image/table overlap', async 
 });
 
 test('moves a text block and restores its position with Undo', async () => {
+  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1024, 768));
   const textElement = window.getByTestId('text-element').first();
-  const before = await textElement.boundingBox();
-  expect(before).not.toBeNull();
+  const before = await positionOnPage(textElement);
 
   await expect(textElement.getByTestId('text-drag-handle')).toHaveCount(0);
   await textElement.getByRole('textbox', { name: 'Текст на странице' }).click();
   await expect(textElement.getByTestId('text-drag-handle')).toBeVisible();
   await dragBy(textElement.getByTestId('text-drag-handle'), 56, 34);
-  const after = await textElement.boundingBox();
-  expect(after).not.toBeNull();
-  expect(after!.x - before!.x).toBeGreaterThan(40);
-  expect(after!.y - before!.y).toBeGreaterThan(20);
+  const after = await positionOnPage(textElement);
+  expect(after.x - before.x).toBeGreaterThan(40);
+  expect(after.y - before.y).toBeGreaterThan(20);
 
   await window.getByRole('button', { name: 'Отменить' }).click();
-  await expect.poll(async () => (await textElement.boundingBox())?.x).toBeCloseTo(before!.x, 0);
-  await expect.poll(async () => (await textElement.boundingBox())?.y).toBeCloseTo(before!.y, 0);
+  await expect.poll(async () => (await positionOnPage(textElement)).x).toBeCloseTo(before.x, 0);
+  await expect.poll(async () => (await positionOnPage(textElement)).y).toBeCloseTo(before.y, 0);
   expect(runtimeErrors).toEqual([]);
 });
 
@@ -547,22 +561,21 @@ test('keeps selection chrome above an overlapping element with a higher stack po
 });
 
 test('moves a table and restores its position with Undo', async () => {
+  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1024, 768));
   const tableElement = window.getByTestId('table-element').first();
-  const before = await tableElement.boundingBox();
-  expect(before).not.toBeNull();
+  const before = await positionOnPage(tableElement);
 
   await expect(tableElement.getByTestId('table-drag-handle')).toHaveCount(0);
   await tableElement.locator('.document-table-header').click({ position: { x: 40, y: 10 } });
   await expect(tableElement.getByTestId('table-drag-handle')).toBeVisible();
   await dragBy(tableElement.getByTestId('table-drag-handle'), 48, 28);
-  const after = await tableElement.boundingBox();
-  expect(after).not.toBeNull();
-  expect(after!.x - before!.x).toBeGreaterThan(32);
-  expect(after!.y - before!.y).toBeGreaterThan(16);
+  const after = await positionOnPage(tableElement);
+  expect(after.x - before.x).toBeGreaterThan(32);
+  expect(after.y - before.y).toBeGreaterThan(16);
 
   await window.getByRole('button', { name: 'Отменить' }).click();
-  await expect.poll(async () => (await tableElement.boundingBox())?.x).toBeCloseTo(before!.x, 0);
-  await expect.poll(async () => (await tableElement.boundingBox())?.y).toBeCloseTo(before!.y, 0);
+  await expect.poll(async () => (await positionOnPage(tableElement)).x).toBeCloseTo(before.x, 0);
+  await expect.poll(async () => (await positionOnPage(tableElement)).y).toBeCloseTo(before.y, 0);
   expect(runtimeErrors).toEqual([]);
 });
 
@@ -641,10 +654,10 @@ test('keeps table-wide alignment while hiding row and column inspector sections'
 });
 
 test('moves an image like other canvas components and restores it with Undo', async () => {
+  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1024, 768));
   await addElement(/^Изображение/);
   const imageElement = window.getByTestId('image-element');
-  const before = await imageElement.boundingBox();
-  expect(before).not.toBeNull();
+  const before = await positionOnPage(imageElement);
 
   await expect(imageElement.getByTestId('image-drag-handle')).toHaveCount(0);
   await imageElement.locator('img').click();
@@ -653,14 +666,13 @@ test('moves an image like other canvas components and restores it with Undo', as
   await expect(imageElement.getByRole('button', { name: 'Изменить размер изображения' })).toBeVisible();
 
   await dragBy(dragHandle, 52, 30);
-  const after = await imageElement.boundingBox();
-  expect(after).not.toBeNull();
-  expect(after!.x - before!.x).toBeGreaterThan(36);
-  expect(after!.y - before!.y).toBeGreaterThan(18);
+  const after = await positionOnPage(imageElement);
+  expect(after.x - before.x).toBeGreaterThan(36);
+  expect(after.y - before.y).toBeGreaterThan(18);
 
   await window.getByRole('button', { name: 'Отменить' }).click();
-  await expect.poll(async () => (await imageElement.boundingBox())?.x).toBeCloseTo(before!.x, 0);
-  await expect.poll(async () => (await imageElement.boundingBox())?.y).toBeCloseTo(before!.y, 0);
+  await expect.poll(async () => (await positionOnPage(imageElement)).x).toBeCloseTo(before.x, 0);
+  await expect.poll(async () => (await positionOnPage(imageElement)).y).toBeCloseTo(before.y, 0);
   expect(runtimeErrors).toEqual([]);
 });
 
@@ -1303,9 +1315,11 @@ test('edits fields, alignment, long content, clean preview, reopening and PDF', 
   await window.getByRole('button', { name: 'PDF', exact: true }).click();
   await expect.poll(() => existsSync(pdfPath)).toBe(true);
   await expect.poll(() => statSync(pdfPath).size).toBeGreaterThan(1_000);
-  for (const path of Object.values(screenshotPaths)) {
+  for (const [name, path] of Object.entries(screenshotPaths)) {
     expect(existsSync(path)).toBe(true);
     expect(statSync(path).size).toBeGreaterThan(1_000);
+    await test.info().attach(name, { path, contentType: 'image/png' });
   }
+  await test.info().attach('exported-document', { path: pdfPath, contentType: 'application/pdf' });
   expect(runtimeErrors).toEqual([]);
 });

@@ -22,6 +22,8 @@ test.beforeEach(async () => {
     dialog.showMessageBox = async () => ({ response: 2, checkboxChecked: false });
   }, filePath);
   page = await app.firstWindow();
+  // Hidden Windows CI windows otherwise throttle animation frames to about 1 Hz.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setBackgroundThrottling(false));
   await page.getByRole('button', { name: 'Новый проект', exact: true }).click();
 });
 
@@ -114,6 +116,8 @@ test('crash recovery restores the last persisted draft on the next launch', asyn
   await app.close().catch(() => {});
   app = await electron.launch({ args: ['.'], env: { ...process.env, NODE_ENV: 'production', MARKD_USER_DATA_DIR: join(directory, 'profile'), MARKD_E2E_HEADLESS: '1' } });
   page = await app.firstWindow();
+  // Hidden Windows CI windows otherwise throttle animation frames to about 1 Hz.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setBackgroundThrottling(false));
   await page.getByRole('button', { name: 'Восстановить черновик' }).click();
   await expect(page.getByRole('textbox', { name: 'Текст на странице', exact: true }).first()).toHaveValue('Recovered after crash');
   await expect(page.getByRole('button', { name: 'Сохранить ·', exact: true })).toBeVisible();

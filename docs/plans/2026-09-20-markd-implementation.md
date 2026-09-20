@@ -23,7 +23,7 @@
 
 Созданы verify и release-candidate workflows для macOS arm64/Intel и Windows x64. E2E используют production renderer и переносимые временные пути/репозиторный PNG вместо macOS-only изображения. Local ad-hoc упаковка отделена от signed release. Схема обеих release-конфигураций проверена установленным electron-builder 26.15.3.
 
-Инструкции по сертификатам, HTTPS feed и последовательности публикации — [docs/releasing.md](../releasing.md). Ветка не публиковалась, remote CI и подписанный release не запускались.
+Инструкции по сертификатам, HTTPS feed и последовательности публикации — [docs/releasing.md](../releasing.md). Ветка `codex/markd-reliability-updates` опубликована с разрешения владельца. Первый remote CI прошёл полностью на Intel macOS; arm64 и Windows выявили зависимость drag-тестов от прокрутки, а Windows — ограничение частоты кадров скрытого тестового окна. Проверки координат переведены в систему листа, фоновые ограничения выключены только для тестовых окон через Electron API. После исправлений выполняется повторный remote CI. Подписанный release не запускался.
 
 ## Результаты локальной проверки
 
