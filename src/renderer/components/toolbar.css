@@ -6,19 +6,20 @@
 }
 
 .toolbar-wrap {
-  justify-self: center;
-  justify-content: center;
-  gap: 6px;
+  justify-self: end;
+  justify-content: flex-end;
+  gap: 12px;
 }
 
 .toolbar-group { gap: 4px; }
-.toolbar-file-actions { margin-left: 1px; }
+.toolbar-file-actions > .button:first-child { min-width: 118px; }
+.preview-control { position: relative; display: inline-flex; }
+.preview-hint { position: absolute; top: calc(100% + 8px); left: 0; z-index: 80; width: max-content; max-width: calc(100vw - 24px); padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: #fffefa; font-size: 12px; font-weight: 500; visibility: hidden; pointer-events: none; }
+.preview-control:hover .preview-hint,
+.preview-control:focus-within .preview-hint { visibility: visible; }
 
 .add-menu { position: relative; }
 .add-menu-trigger[aria-expanded='true'] { color: #fff; background: var(--accent); }
-.save-menu { position: relative; }
-.save-menu > .button[aria-expanded='true'] { border-color: rgba(30, 91, 73, 0.4); background: var(--accent-soft); }
-.save-menu-chevron { margin-left: -2px; }
 
 .add-menu-popover {
   position: absolute;
@@ -71,32 +72,3 @@
 
 .add-menu-page-group { border-top: 1px solid rgba(57, 62, 53, 0.11); padding-top: 4px; }
 
-.save-menu-popover {
-  position: absolute;
-  top: calc(100% + 9px);
-  right: 0;
-  z-index: 80;
-  width: 252px;
-  display: grid;
-  gap: 3px;
-  border: 1px solid rgba(57, 62, 53, 0.15);
-  border-radius: 12px;
-  padding: 7px;
-  background: rgba(255, 254, 250, 0.99);
-  box-shadow: 0 22px 55px rgba(35, 36, 31, 0.2);
-}
-
-.save-menu-popover button {
-  width: 100%;
-  min-height: 52px;
-  justify-content: flex-start;
-  gap: 11px;
-  padding: 8px 10px;
-  text-align: left;
-  white-space: normal;
-}
-
-.save-menu-popover button > svg { width: 18px; height: 18px; flex: 0 0 auto; color: var(--accent); }
-.save-menu-popover button > span { min-width: 0; display: grid; gap: 3px; }
-.save-menu-popover strong { color: var(--ink); font-size: 12px; }
-.save-menu-popover small { color: var(--muted); font-size: 10px; font-weight: 500; }

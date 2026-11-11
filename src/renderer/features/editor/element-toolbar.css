@@ -1,0 +1,84 @@
+.element-toolbar {
+  position: relative;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  flex: 0 0 84px;
+  height: 84px;
+  gap: 12px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.element-toolbar-context { flex: 0 0 auto; font-size: 12px; font-weight: 700; }
+.element-toolbar .inspector-panel { display: flex; flex: 1 0 auto; align-items: flex-end; flex-wrap: nowrap; gap: 8px; min-width: 0; padding: 0; }
+.element-toolbar .inspector-section { flex: 0 0 auto; border: 0; }
+.element-toolbar .inspector-section-toggle { width: auto; min-height: 36px; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); background: var(--paper); font-size: 12px; }
+.element-toolbar .inspector-section-toggle[aria-expanded='true'] { color: var(--accent); background: var(--accent-soft); }
+.element-toolbar .inspector-section-summary { display: none; }
+.element-toolbar .inspector-section-content {
+  position: fixed;
+  inset: auto;
+  position-area: bottom span-right;
+  position-try-fallbacks: flip-inline, flip-block;
+  width: min(340px, calc(100vw - 24px));
+  max-height: min(560px, 65dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  margin: 6px 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 16px;
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: 0 8px 24px rgba(35, 36, 31, 0.16);
+}
+.inspector-popover-title { margin: 0 0 16px; font-size: 14px; }
+.element-toolbar .danger-action,
+.element-toolbar .fit-page-action { width: auto; min-height: 36px; margin: 0; padding-inline: 10px; }
+.element-toolbar .danger-action { margin-left: auto; }
+.element-toolbar .inspector-actions { margin: 0; }
+.element-toolbar .inspector-actions-stack { flex-direction: row; }
+.element-toolbar .inspector-actions button { width: auto; min-height: 36px; }
+.table-alignment-tools { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; }
+.table-alignment-tools label { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.table-alignment-tools select,
+.table-alignment-tools > button { min-height: 36px; border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; color: var(--ink); background: var(--paper); font: inherit; font-size: 12px; }
+.table-alignment-tools .segmented-control-wide { width: auto; }
+.table-alignment-note { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.text-format-controls { display: flex; flex: 0 0 auto; align-items: flex-end; flex-wrap: nowrap; gap: 8px; }
+.text-format-controls > label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
+.text-format-controls select,
+.text-format-controls input { min-height: 36px; border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; color: var(--ink); background: var(--paper); font: inherit; font-size: 12px; }
+.format-font select { width: 160px; }
+.format-size input { width: 74px; font-variant-numeric: tabular-nums; }
+.text-format-controls .color-control > span { grid-template-columns: 36px 88px; }
+.text-format-controls .color-control input[type='color'] { width: 36px; height: 36px; padding: 3px; cursor: pointer; }
+.text-format-controls .color-control input[type='text'] { width: 88px; height: 36px; font-size: 11px; }
+.text-format-controls .segmented-control-wide { width: auto; }
+.text-format-controls .segmented-control button { min-width: 36px; min-height: 36px; }
+.text-format-controls :is(input, select, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.inspector-asset-name { max-width: 180px; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.element-toolbar .inspector-panel > .segmented-control-wide { width: auto; }
+.document-properties > .color-control { flex: 0 0 auto; }
+.document-properties > .color-control > span { grid-template-columns: 36px 88px; }
+.document-properties > .color-control input { min-height: 36px; }
+
+@media (max-width: 760px) {
+  .element-toolbar { padding-inline: 10px; gap: 8px; }
+  .element-toolbar .inspector-panel { flex-wrap: nowrap; flex: 0 0 auto; }
+  .element-toolbar .inspector-section-summary { display: none; }
+  .table-alignment-tools { flex-wrap: nowrap; width: auto; }
+  .table-alignment-note { display: none; }
+  .text-format-controls { flex-wrap: nowrap; flex: 0 0 auto; }
+  .app-shell .app-main { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .editor-sidebar { position: absolute; z-index: 22; inset: 0 0 0 auto; width: min(var(--inspector-width), 85vw); background: var(--paper); }
+  .app-shell .inspector-resizer { display: none; }
+  .app-shell .canvas-col::before { right: 0; }
+}

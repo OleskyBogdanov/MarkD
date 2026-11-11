@@ -10,7 +10,7 @@
     "postinstall": "electron-builder install-app-deps",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "lint": "eslint . --max-warnings=0",
-    "test": "vitest run && node --test scripts/release-config.test.mjs",
+    "test": "vitest run && node --test scripts/release-config.test.mjs scripts/icon-assets.test.mjs",
     "test:e2e": "npm run build && playwright test",
     "build:renderer": "vite build",
     "build:main": "tsc -p tsconfig.main.json",
@@ -96,7 +96,7 @@
       "output": "dist-package"
     },
     "mac": {
-      "icon": "build/icon.png",
+      "icon": "build/icon.icns",
       "target": "dir",
       "hardenedRuntime": false,
       "identity": "-"

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { _electron as electron, type ElectronApplication, type Locator, type Page } from 'playwright';
+import { projectSchema, type KpProject } from '../src/shared/projectSchema';
 
 const testRoot = mkdtempSync(join(tmpdir(), 'markd-editor-'));
 const projectPath = join(testRoot, 'markd-e2e-proposal.markd');
@@ -120,15 +121,53 @@ const addElement = async (name: RegExp): Promise<void> => {
   await window.getByRole('menuitem', { name }).click();
 };
 
+const elementToolbar = (): Locator => window.locator('.element-toolbar');
+
 const openInspectorSection = async (name: string): Promise<Locator> => {
-  const trigger = window.getByRole('button', { name, exact: true });
-  if (await trigger.getAttribute('aria-expanded') === 'false') await trigger.click();
+  const trigger = elementToolbar().getByRole('button', { name, exact: true });
+  if (await trigger.getAttribute('aria-expanded') === 'false') {
+    if (await elementToolbar().locator('.inspector-section-content:popover-open').count()) await window.keyboard.press('Escape');
+    await trigger.click();
+  }
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
   return trigger;
 };
 
 const saveFileFromMenu = async (): Promise<void> => {
   await window.getByRole('button', { name: /^Сохранить(?: ·)?$/ }).click();
+};
+
+// Geometry is fixture data now that the toolbar exposes only pointer editing.
+// Start from a real saved project and load the adjusted file through Open.
+const openGeometryFixture = async (configure: (project: KpProject) => void): Promise<void> => {
+  await saveFileFromMenu();
+  await expect(window.getByRole('button', { name: 'Сохранить', exact: true })).toBeVisible();
+  await expect.poll(() => existsSync(projectPath)).toBe(true);
+  const project = JSON.parse(readFileSync(projectPath, 'utf8')) as KpProject;
+  configure(project);
+  writeFileSync(projectPath, JSON.stringify(project), 'utf8');
+  await window.getByRole('button', { name: 'Файл', exact: true }).click();
+  await window.getByRole('menuitem', { name: 'Открыть', exact: true }).click();
+  await expect(window.getByText(/Открыт markd-e2e-proposal.markd/)).toBeVisible();
+};
+
+const expectNoGeometryControls = async (): Promise<void> => {
+  await expect(elementToolbar().getByRole('button', { name: 'Положение', exact: true })).toHaveCount(0);
+  for (const label of ['X, мм', 'Y, мм', 'Ширина, мм', 'Высота, мм']) {
+    await expect(elementToolbar().getByLabel(label, { exact: true })).toHaveCount(0);
+  }
+};
+
+const expectFullPageImage = async (image: Locator): Promise<void> => {
+  const page = window.getByTestId('editor-page').first().locator('.page');
+  await expect.poll(async () => {
+    const [imageBox, pageBox] = await Promise.all([image.boundingBox(), page.boundingBox()]);
+    if (!imageBox || !pageBox) return Number.POSITIVE_INFINITY;
+    return Math.max(
+      Math.abs(imageBox.x - pageBox.x), Math.abs(imageBox.y - pageBox.y),
+      Math.abs(imageBox.width - pageBox.width), Math.abs(imageBox.height - pageBox.height)
+    );
+  }).toBeLessThan(1);
 };
 
 const pdfPageCount = (path: string): number =>
@@ -139,7 +178,8 @@ test('shows the MarkD project screen and preserves history across core actions',
   await expect(window).toHaveTitle(/MarkD/);
   await expect(window.getByText('MARKD', { exact: true })).toBeVisible();
   await expect(window.getByText('Выберите элемент, чтобы переместить его, изменить размер или настроить свойства.', { exact: true })).toHaveCount(0);
-  await expect(window.getByRole('heading', { name: 'Настройки проекта' })).toBeVisible();
+  await expect(elementToolbar().getByLabel('Фон страницы: HEX', { exact: true })).toBeVisible();
+  await expect(window.getByRole('textbox', { name: 'Название документа', exact: true })).toBeVisible();
   await expect.poll(() => window.evaluate(() => typeof window.desktop)).toBe('object');
   await expect(window.locator('.document-readout svg')).toHaveCount(0);
 
@@ -187,14 +227,20 @@ test('shows the MarkD project screen and preserves history across core actions',
 
 test('saves a template copy and keeps Command or Control S bound to file saving', async () => {
   await addElement(/^Текст Свободный/);
-  const saveTrigger = window.getByTitle('Варианты сохранения');
+  const saveTrigger = window.getByRole('button', { name: 'Файл', exact: true });
 
   await saveTrigger.focus();
   await saveTrigger.press('ArrowDown');
+  const openFileItem = window.getByRole('menuitem', { name: 'Открыть', exact: true });
   const saveFileItem = window.getByRole('menuitem', { name: /^Сохранить файл/ });
   const saveTemplateItem = window.getByRole('menuitem', { name: /^Сохранить как шаблон/ });
+  await expect(window.getByRole('menu').getByRole('menuitem')).toHaveText([
+    /^Открыть/, /^Сохранить файл/, /^Сохранить как…/, /^Сохранить копию…/, /^Сохранить как шаблон/
+  ]);
+  await expect(openFileItem).toBeFocused();
+  await openFileItem.press('ArrowDown');
   await expect(saveFileItem).toBeFocused();
-  await saveFileItem.press('ArrowDown');
+  await saveFileItem.press('End');
   await expect(saveTemplateItem).toBeFocused();
   await saveTemplateItem.press('Escape');
   await expect(saveTrigger).toBeFocused();
@@ -225,14 +271,15 @@ test('opens a saved project from the recent projects screen', async () => {
   await recentProject.click();
 
   await expect(window.locator('.app-shell')).toBeVisible();
-  await expect(window.getByRole('heading', { name: 'Настройки проекта' })).toBeVisible();
+  await expect(elementToolbar().getByLabel('Фон страницы: HEX', { exact: true })).toBeVisible();
+  await expect(window.getByRole('textbox', { name: 'Название документа', exact: true })).toBeVisible();
   await expect(window.getByText(/Открыт markd-e2e-proposal.markd/)).toBeVisible();
   expect(runtimeErrors).toEqual([]);
 });
 
 test('loads all 20 bundled document fonts without system dependencies', async () => {
   await window.getByTestId('text-element').first().getByRole('textbox', { name: 'Текст на странице' }).click();
-  const fontSelect = window.getByLabel('Шрифт');
+  const fontSelect = elementToolbar().getByLabel('Шрифт');
   await expect(fontSelect.locator('option')).toHaveCount(20);
 
   const loaded = await window.evaluate(async (families) => Promise.all(families.map(async (family) => {
@@ -242,10 +289,121 @@ test('loads all 20 bundled document fonts without system dependencies', async ()
   expect(loaded).toEqual(bundledFontFamilies.map(() => true));
 });
 
+for (const kind of ['text', 'shape', 'textField', 'selectField', 'table'] as const) {
+  test(`edits ${kind} typography directly and preserves rendered styling after reopening`, async () => {
+    const additions = {
+      shape: /^Прямоугольник/,
+      textField: /^Текстовое поле/,
+      selectField: /^Выпадающий список/
+    };
+    if (kind === 'shape' || kind === 'textField' || kind === 'selectField') {
+      await addElement(additions[kind]);
+    }
+    const testIds = {
+      text: 'text-element', shape: 'shape-element', textField: 'text-field-element',
+      selectField: 'select-field-element', table: 'table-element'
+    };
+    const element = window.getByTestId(testIds[kind]).last();
+    if (kind === 'text') await element.getByRole('textbox').click();
+    if (kind === 'table') await element.locator('.document-table-header').click();
+    const toolbar = elementToolbar();
+    const font = toolbar.getByRole('combobox', { name: 'Шрифт', exact: true });
+    const size = toolbar.getByLabel(kind === 'text' || kind === 'shape' ? 'Размер, px' : 'Размер текста, px', { exact: true });
+    const color = toolbar.getByLabel('Цвет текста: выбор цвета', { exact: true });
+    await expect(toolbar.locator('.inspector-section-content:visible')).toHaveCount(0);
+    await expect(font).toBeVisible();
+    await expect(size).toBeVisible();
+    await expect(color).toBeVisible();
+    await expect(color).toHaveAttribute('type', 'color');
+    const hex = toolbar.getByLabel('Цвет текста: HEX', { exact: true });
+    await expect(hex).toBeVisible();
+    await expect(toolbar.getByRole('button', { name: 'Оформление', exact: true })).toHaveCount(0);
+    await expect(toolbar.getByRole('button', { name: 'Содержание', exact: true })).toHaveCount(0);
+    const controlCenters = await toolbar.locator(
+      '.format-font select, .format-size input, .color-control input[type="color"], .inspector-section-toggle'
+    ).evaluateAll((nodes) => nodes.filter((node) => node.getBoundingClientRect().height > 0).map((node) => {
+      const box = node.getBoundingClientRect();
+      return box.y + box.height / 2;
+    }));
+    expect(Math.max(...controlCenters) - Math.min(...controlCenters)).toBeLessThanOrEqual(1);
+    await window.evaluate(() => document.fonts.ready);
+    for (const width of [390, 1440, 1920]) {
+      await window.setViewportSize({ width, height: 900 });
+      for (const colorScheme of ['light', 'dark'] as const) {
+        await window.emulateMedia({ colorScheme });
+        await toolbar.evaluate((node) => { node.scrollLeft = 0; });
+        await window.screenshot({ path: `output/table-interaction-update/${kind}-${width}-${colorScheme}.png` });
+      }
+    }
+    await window.setViewportSize({ width: 1440, height: 900 });
+    await window.emulateMedia({ colorScheme: 'light' });
+    await expectNoGeometryControls();
+    if (kind === 'textField') {
+      await expect(toolbar.getByRole('button', { name: 'Текст', exact: true })).toHaveCount(0);
+      await expect(toolbar.getByRole('group', { name: 'Вертикальное выравнивание', exact: true })).toBeVisible();
+    }
+    if (kind === 'shape') {
+      await expect(toolbar.getByRole('button', { name: 'Текст', exact: true })).toHaveCount(0);
+      await element.dblclick();
+      await element.getByRole('textbox', { name: 'Текст фигуры' }).fill('Прямое оформление');
+      await element.getByRole('textbox', { name: 'Текст фигуры' }).press('Escape');
+    }
+    if (kind === 'table') {
+      await element.getByRole('button', { name: 'Добавить строку таблицы', exact: true }).click();
+      await expect(toolbar.getByRole('button', { name: 'Выбрать всю таблицу', exact: true })).toHaveCount(0);
+    }
+    await font.selectOption('pt-serif');
+    await size.fill('18');
+    await color.fill('#123456');
+    await expect(hex).toHaveValue('#123456');
+    await hex.fill('#12345680');
+    await hex.press('Enter');
+    if (kind === 'text' || kind === 'shape' || kind === 'table') {
+      for (const name of ['Полужирный', 'Курсив']) {
+        const button = toolbar.getByRole('button', { name, exact: true });
+        await expect(button).toBeVisible();
+        if (await button.getAttribute('aria-pressed') !== 'true') await button.click();
+        await expect(button).toHaveAttribute('aria-pressed', 'true');
+      }
+      await toolbar.getByRole('group', { name: 'Выравнивание текста', exact: true })
+        .getByRole('button', { name: 'По правому краю', exact: true }).click();
+    } else {
+      await expect(toolbar.getByRole('button', { name: 'Полужирный', exact: true })).toHaveCount(0);
+      await expect(toolbar.getByRole('button', { name: 'Курсив', exact: true })).toHaveCount(0);
+    }
+    const content = kind === 'shape' ? element.locator('.shape-text-presentation')
+      : kind === 'table' ? element.locator('tbody textarea').first()
+        : kind === 'selectField' ? element.locator('select')
+          : element.getByRole('textbox');
+    const expectTypography = async (): Promise<void> => {
+      await expect(content).toHaveCSS('font-family', /MarkD PT Serif/);
+      await expect(content).toHaveCSS('font-size', '18px');
+      await expect(content).toHaveCSS('color', 'rgba(18, 52, 86, 0.5)');
+      if (kind === 'text' || kind === 'shape' || kind === 'table') {
+        await expect(content).toHaveCSS('font-weight', '700');
+        await expect(content).toHaveCSS('font-style', 'italic');
+        await expect(content).toHaveCSS('text-align', 'right');
+      }
+    };
+    await expectTypography();
+    await saveFileFromMenu();
+    await expect.poll(() => existsSync(projectPath)).toBe(true);
+    const savedProject = projectSchema.parse(JSON.parse(readFileSync(projectPath, 'utf8')));
+    expect(savedProject.pages[0].elements.find((candidate) => candidate.type === kind)).toMatchObject(
+      kind === 'shape' ? { textStyle: { color: '#12345680' } }
+        : { style: { [kind === 'text' ? 'color' : 'textColor']: '#12345680' } }
+    );
+    await window.getByRole('button', { name: 'К проектам' }).click();
+    await window.getByRole('button', { name: 'Открыть проект markd-e2e-proposal' }).click();
+    await expectTypography();
+    expect(runtimeErrors).toEqual([]);
+  });
+}
+
 test('opens a copied self-contained project on a clean profile', async () => {
   test.setTimeout(60_000);
   await window.getByTestId('text-element').first().getByRole('textbox', { name: 'Текст на странице' }).click();
-  await window.getByLabel('Шрифт').selectOption('pt-serif');
+  await elementToolbar().getByLabel('Шрифт').selectOption('pt-serif');
   await addElement(/^Изображение/);
   await expect(window.getByTestId('image-element')).toHaveCount(1);
 
@@ -305,8 +463,11 @@ test('creates, saves and exports a proposal without image/table overlap', async 
   );
 
   const tableInputs = window.locator('.table-element textarea');
+  await tableInputs.nth(0).dblclick();
   await tableInputs.nth(0).fill('Организация мероприятия');
+  await tableInputs.nth(1).dblclick();
   await tableInputs.nth(1).fill('1');
+  await tableInputs.nth(2).dblclick();
   await tableInputs.nth(2).fill('120 000 ₽');
 
   await addElement(/^Изображение/);
@@ -326,10 +487,10 @@ test('creates, saves and exports a proposal without image/table overlap', async 
 
   await window.getByTestId('table-element').click({ position: { x: 2, y: 2 } });
   await expect(window.getByRole('heading', { name: 'Таблица' })).toBeVisible();
-  await openInspectorSection('Положение');
-  const tableY = window.getByLabel('Y, мм');
-  await tableY.fill('158');
-  await expect(tableY).toHaveValue('158');
+  await expectNoGeometryControls();
+  const beforeMove = await positionOnPage(window.getByTestId('table-element'));
+  await dragBy(window.getByTestId('table-element').getByTestId('table-drag-handle'), 0, 30);
+  expect((await positionOnPage(window.getByTestId('table-element'))).y).toBeGreaterThan(beforeMove.y + 15);
 
   await saveFileFromMenu();
   await expect.poll(() => existsSync(projectPath)).toBe(true);
@@ -387,14 +548,11 @@ test('copies and pastes text between text blocks', async () => {
 
 test('adds line breaks to text fields only with Shift+Enter', async () => {
   await addElement(/^Текстовое поле/);
-  const inspectorValue = window.getByRole('textbox', { name: 'Значение' });
-
-  await inspectorValue.fill('Первая строка');
-  await inspectorValue.press('Shift+Enter');
-  await inspectorValue.type('Вторая строка');
-  await expect(inspectorValue).toHaveValue('Первая строка\nВторая строка');
-
   const canvasValue = window.getByTestId('text-field-element').getByRole('textbox');
+  await expect(elementToolbar().getByRole('textbox', { name: 'Значение' })).toHaveCount(0);
+  await canvasValue.fill('Первая строка');
+  await canvasValue.press('Shift+Enter');
+  await canvasValue.type('Вторая строка');
   await expect(canvasValue).toHaveValue('Первая строка\nВторая строка');
   await canvasValue.press('Enter');
   await expect(canvasValue).toHaveValue('Первая строка\nВторая строка');
@@ -452,47 +610,58 @@ test('adds and styles a basic shape', async () => {
   await expect(shape).toHaveCount(1);
   await expect(window.getByRole('heading', { name: 'Фигура' })).toBeVisible();
 
-  await window.getByLabel('Тип фигуры').selectOption('triangle');
+  await openInspectorSection('Форма');
+  await elementToolbar().getByLabel('Тип фигуры').selectOption('triangle');
   await openInspectorSection('Контур');
-  await window.getByLabel('Стиль').selectOption('dashed');
-  await window.getByLabel('Толщина, px').fill('3');
+  await elementToolbar().getByLabel('Стиль').selectOption('dashed');
+  await elementToolbar().getByLabel('Толщина, px').fill('3');
   await expect(shape.locator('polygon')).toHaveCount(1);
   await expect.poll(() => shape.locator('polygon').evaluate((node) => getComputedStyle(node).strokeDasharray)).toContain('10');
   expect(runtimeErrors).toEqual([]);
 });
 
-test('groups shape properties into keyboard-accessible collapsible sections', async () => {
+test('opens one shape property popover at a time with keyboard dismissal', async () => {
   await addElement(/^Прямоугольник/);
 
-  const form = window.getByRole('button', { name: 'Форма', exact: true });
-  const fill = window.getByRole('button', { name: 'Заливка', exact: true });
-  const stroke = window.getByRole('button', { name: 'Контур', exact: true });
-  const text = window.getByRole('button', { name: 'Текст', exact: true });
-  const position = window.getByRole('button', { name: 'Положение', exact: true });
+  const form = elementToolbar().getByRole('button', { name: 'Форма', exact: true });
+  const fill = elementToolbar().getByRole('button', { name: 'Заливка', exact: true });
+  const stroke = elementToolbar().getByRole('button', { name: 'Контур', exact: true });
+  const text = elementToolbar().getByRole('button', { name: 'Текст', exact: true });
+  const position = elementToolbar().getByRole('button', { name: 'Положение', exact: true });
 
-  await expect(form).toHaveAttribute('aria-expanded', 'true');
-  await expect(fill).toHaveAttribute('aria-expanded', 'true');
+  await expect(form).toHaveAttribute('aria-expanded', 'false');
+  await expect(fill).toHaveAttribute('aria-expanded', 'false');
   await expect(stroke).toHaveAttribute('aria-expanded', 'false');
-  await expect(text).toHaveAttribute('aria-expanded', 'false');
-  await expect(position).toHaveAttribute('aria-expanded', 'false');
+  await expect(text).toHaveCount(0);
+  await expect(position).toHaveCount(0);
+  await expectNoGeometryControls();
   await expect(window.getByText('КОМПОНЕНТ', { exact: true })).toHaveCount(0);
-  await window.locator('.sidebar-properties').screenshot({ path: shapePanelScreenshotPath });
+  await elementToolbar().screenshot({ path: shapePanelScreenshotPath });
 
   await stroke.focus();
   await stroke.press('Enter');
   await expect(stroke).toBeFocused();
   await expect(stroke).toHaveAttribute('aria-expanded', 'true');
   await expect(stroke).toHaveCSS('outline-style', 'solid');
-  await expect(window.getByLabel('Толщина, px')).toBeVisible();
+  await expect(elementToolbar().getByLabel('Толщина, px')).toBeVisible();
 
-  await text.focus();
-  await text.press('Space');
-  const content = window.getByLabel('Содержание');
-  await content.fill('Текст сохраняется');
-  await text.click();
+  await form.focus();
+  await form.press('Space');
+  await expect(stroke).toHaveAttribute('aria-expanded', 'false');
+  await expect(elementToolbar().locator('.inspector-section-content:visible')).toHaveCount(1);
+  const content = elementToolbar().getByLabel('Скругление, px');
+  await content.fill('16');
+  await form.click();
   await expect(content).toBeHidden();
-  await text.click();
-  await expect(content).toHaveValue('Текст сохраняется');
+  await form.click();
+  await expect(content).toHaveValue('16');
+  await content.press('Escape');
+  await expect(form).toHaveAttribute('aria-expanded', 'false');
+  await expect(form).toBeFocused();
+  await openInspectorSection('Форма');
+  await window.getByText('MARKD', { exact: true }).click();
+  await expect(form).toHaveAttribute('aria-expanded', 'false');
+  await expect(content).toBeHidden();
   expect(runtimeErrors).toEqual([]);
 });
 
@@ -500,10 +669,10 @@ test('rounds a rectangle and edits its centered text on double click', async () 
   await addElement(/^Прямоугольник/);
   const shape = window.getByTestId('shape-element');
 
-  await window.getByLabel('Скругление, px').fill('18');
-  await openInspectorSection('Текст');
-  await window.getByLabel('Шрифт').selectOption('pt-serif');
-  await window.getByLabel('Размер, px').fill('20');
+  await openInspectorSection('Форма');
+  await elementToolbar().getByLabel('Скругление, px').fill('18');
+  await elementToolbar().getByLabel('Шрифт').selectOption('pt-serif');
+  await elementToolbar().getByLabel('Размер, px').fill('20');
   await shape.dblclick();
 
   const editor = shape.getByRole('textbox', { name: 'Текст фигуры' });
@@ -516,9 +685,9 @@ test('rounds a rectangle and edits its centered text on double click', async () 
   await expect(shape.locator('.shape-text-presentation')).toHaveCSS('font-family', /MarkD PT Serif/);
   await expect(shape.locator('.shape-text-presentation')).toHaveCSS('text-align', 'center');
 
-  const editTextButton = shape.getByRole('button', { name: 'Редактировать текст фигуры' });
-  await editTextButton.focus();
-  await editTextButton.press('Enter');
+  await expect(shape.getByRole('button', { name: 'Редактировать текст фигуры' })).toHaveCount(0);
+  await shape.focus();
+  await shape.press('Enter');
   await expect(shape.getByRole('textbox', { name: 'Текст фигуры' })).toBeFocused();
   await shape.getByRole('textbox', { name: 'Текст фигуры' }).press('Escape');
   expect(runtimeErrors).toEqual([]);
@@ -526,20 +695,13 @@ test('rounds a rectangle and edits its centered text on double click', async () 
 
 test('keeps selection chrome above an overlapping element with a higher stack position', async () => {
   const textElement = window.getByTestId('text-element').first();
-  await textElement.getByRole('textbox', { name: 'Текст на странице' }).click({ position: { x: 2, y: 2 } });
-  await openInspectorSection('Положение');
-  const textX = Number(await window.getByLabel('X, мм').inputValue());
-  const textY = Number(await window.getByLabel('Y, мм').inputValue());
-  const textWidth = Number(await window.getByLabel('Ширина, мм').inputValue());
-  const textHeight = Number(await window.getByLabel('Высота, мм').inputValue());
-
   await addElement(/^Прямоугольник/);
   const shapeElement = window.getByTestId('shape-element');
-  await openInspectorSection('Положение');
-  await window.getByLabel('X, мм').fill(String(textX + textWidth - 5));
-  await window.getByLabel('Y, мм').fill(String(textY));
-  await window.getByLabel('Ширина, мм').fill('30');
-  await window.getByLabel('Высота, мм').fill(String(textHeight));
+  await openGeometryFixture((project) => {
+    const text = project.pages[0].elements.find((element) => element.type === 'text')!;
+    const shape = project.pages[0].elements.find((element) => element.type === 'shape')!;
+    shape.rect = { x: text.rect.x + text.rect.width - 5, y: text.rect.y, width: 30, height: text.rect.height };
+  });
 
   const [textBox, shapeBox] = await Promise.all([textElement.boundingBox(), shapeElement.boundingBox()]);
   expect(textBox).not.toBeNull();
@@ -593,8 +755,7 @@ test('resizes a table like other canvas components and restores it with Undo', a
   expect(after).not.toBeNull();
   expect(after!.width).toBeGreaterThan(before!.width + 15);
   expect(after!.height).toBeGreaterThan(before!.height + 10);
-  await openInspectorSection('Положение');
-  await expect(window.getByLabel('Высота, мм')).toBeVisible();
+  await expectNoGeometryControls();
 
   await window.getByRole('button', { name: 'Отменить' }).click();
   await expect.poll(async () => (await tableElement.boundingBox())?.width).toBeCloseTo(before!.width, 0);
@@ -631,7 +792,7 @@ test('resizes table columns, rows and header with cursor and keyboard', async ()
   await headerResize.press('ArrowDown');
   await expect.poll(async () => (await table.locator('thead tr').boundingBox())?.height).toBeGreaterThan(headerAfterPointer!.height);
 
-  await table.getByRole('button', { name: 'Добавить строку таблицы' }).click();
+  await table.getByRole('button', { name: 'Добавить строку таблицы', exact: true }).click();
   const bodyRowBefore = await table.locator('tbody tr').first().boundingBox();
   await dragBy(table.getByTestId('table-row-resize-2'), 0, 16);
   const bodyRowAfter = await table.locator('tbody tr').first().boundingBox();
@@ -639,17 +800,121 @@ test('resizes table columns, rows and header with cursor and keyboard', async ()
   expect(runtimeErrors).toEqual([]);
 });
 
-test('keeps table-wide alignment while hiding row and column inspector sections', async () => {
+test('aligns table selections with Undo and save persistence', async () => {
+  test.setTimeout(60_000);
   const table = window.getByTestId('table-element').first();
   await table.locator('.document-table-header').click();
-  await window.getByLabel('Высота строки, px').fill('60');
-  await window.getByRole('button', { name: 'Расположить текст снизу' }).click();
-  await expect.poll(() => table.locator('thead th').first().evaluate((node) => getComputedStyle(node).verticalAlign)).toBe('bottom');
-  const tableInspector = window.getByRole('region', { name: 'Свойства таблицы' });
-  await expect(tableInspector.getByRole('button', { name: 'Колонки', exact: true })).toHaveCount(0);
-  await expect(tableInspector.getByRole('button', { name: 'Строки', exact: true })).toHaveCount(0);
-  await expect(tableInspector.getByRole('button', { name: 'Добавить строку', exact: true })).toBeVisible();
-  await expect(tableInspector.getByRole('button', { name: 'Добавить колонку', exact: true })).toBeVisible();
+  const toolbar = elementToolbar();
+  const horizontal = toolbar.getByRole('group', { name: 'Выравнивание текста', exact: true });
+  const vertical = toolbar.getByRole('group', { name: 'Вертикальное выравнивание', exact: true });
+  const applyHistory = async (action: 'Отменить' | 'Повторить', target: 'table' | 'column' | 'row'): Promise<void> => {
+    await window.getByRole('button', { name: action }).click();
+    await table.locator('.document-table-header').click();
+    if (target === 'column') await table.getByRole('button', { name: 'Выбрать столбец 2', exact: true }).click();
+    if (target === 'row') await table.getByRole('button', { name: 'Выбрать строку 2', exact: true }).click();
+  };
+  const cell = (rowIndex: number, columnIndex: number): Locator =>
+    table.locator('tr').nth(rowIndex).locator('th, td').nth(columnIndex);
+  const expectCell = async (rowIndex: number, columnIndex: number, align: string, verticalAlign: string): Promise<void> => {
+    await expect(cell(rowIndex, columnIndex).locator('textarea')).toHaveCSS('text-align', align);
+    await expect(cell(rowIndex, columnIndex)).toHaveCSS('vertical-align', verticalAlign);
+    await expect(cell(rowIndex, columnIndex).locator('.table-cell-content'))
+      .toHaveCSS('justify-content', verticalAlign === 'top' ? 'flex-start' : verticalAlign === 'middle' ? 'center' : 'flex-end');
+  };
+  for (const name of ['Область выравнивания', 'Столбец таблицы', 'Строка таблицы']) {
+    await expect(toolbar.getByRole('combobox', { name, exact: true })).toHaveCount(0);
+  }
+  await expect(toolbar.getByRole('button', { name: 'Наследовать', exact: true })).toHaveCount(0);
+  await expect(toolbar.getByRole('button', { name: 'Содержание', exact: true })).toHaveCount(0);
+  await expect(horizontal).toBeVisible();
+  await expect(vertical).toBeVisible();
+  await expect(toolbar.locator('.text-placement-control')).toHaveCount(0);
+  await expect(toolbar.getByRole('button', { name: 'Колонки', exact: true })).toHaveCount(0);
+  await expect(toolbar.getByRole('button', { name: 'Строки', exact: true })).toHaveCount(0);
+  await expect(toolbar.getByRole('button', { name: 'Выбрать всю таблицу', exact: true })).toHaveCount(0);
+  await expect(table.getByRole('button', { name: 'Добавить колонку таблицы', exact: true })).toBeVisible();
+  await table.getByRole('button', { name: 'Добавить строку таблицы', exact: true }).click();
+  await table.getByRole('button', { name: 'Добавить строку таблицы', exact: true }).click();
+  await expect(table.locator('tr')).toHaveCount(3);
+  await openInspectorSection('Текст и ячейки');
+  await toolbar.getByLabel('Высота выбранных строк, px').fill('60');
+  await toolbar.getByRole('button', { name: 'Текст и ячейки', exact: true }).click();
+
+  await table.getByRole('button', { name: 'Выбрать ячейку 1, 1', exact: true }).focus();
+  await window.keyboard.press('Escape');
+  await horizontal.getByRole('button', { name: 'По правому краю', exact: true }).click();
+  await vertical.getByRole('button', { name: 'По нижнему краю', exact: true }).click();
+  for (let rowIndex = 0; rowIndex < 3; rowIndex += 1) {
+    for (let columnIndex = 0; columnIndex < 3; columnIndex += 1) {
+      await expectCell(rowIndex, columnIndex, 'right', 'bottom');
+    }
+  }
+
+  await table.getByRole('button', { name: 'Выбрать столбец 2', exact: true }).click();
+  await expect(table.locator('[data-cell-selected="true"]')).toHaveCount(3);
+  await horizontal.getByRole('button', { name: 'По центру', exact: true }).click();
+  await expectCell(0, 1, 'center', 'bottom');
+  await expectCell(0, 0, 'right', 'bottom');
+  await applyHistory('Отменить', 'column');
+  await expectCell(0, 1, 'right', 'bottom');
+  await applyHistory('Повторить', 'column');
+  await expectCell(0, 1, 'center', 'bottom');
+  await vertical.getByRole('button', { name: 'По середине', exact: true }).click();
+  for (let rowIndex = 0; rowIndex < 3; rowIndex += 1) {
+    await expectCell(rowIndex, 1, 'center', 'middle');
+    await expectCell(rowIndex, 0, 'right', 'bottom');
+    await expectCell(rowIndex, 2, 'right', 'bottom');
+  }
+  await applyHistory('Отменить', 'column');
+  await expectCell(2, 1, 'center', 'bottom');
+  await applyHistory('Повторить', 'column');
+  await expectCell(2, 1, 'center', 'middle');
+
+  await table.getByRole('button', { name: 'Выбрать строку 2', exact: true }).click();
+  await expect(table.locator('[data-cell-selected="true"]')).toHaveCount(3);
+  await horizontal.getByRole('button', { name: 'По левому краю', exact: true }).click();
+  await expectCell(1, 1, 'left', 'middle');
+  await applyHistory('Отменить', 'row');
+  await expectCell(1, 1, 'center', 'middle');
+  await applyHistory('Повторить', 'row');
+  await vertical.getByRole('button', { name: 'По верхнему краю', exact: true }).click();
+  await expectCell(1, 1, 'left', 'top');
+  await applyHistory('Отменить', 'row');
+  await expectCell(1, 1, 'left', 'middle');
+  await expectCell(1, 0, 'left', 'bottom');
+  await applyHistory('Повторить', 'row');
+
+  await table.getByRole('button', { name: 'Выбрать ячейку 1, 1', exact: true }).focus();
+  await window.keyboard.press('Escape');
+  await horizontal.getByRole('button', { name: 'По левому краю', exact: true }).click();
+  await expectCell(2, 0, 'left', 'bottom');
+  await expectCell(2, 1, 'left', 'middle');
+  await expectCell(1, 1, 'left', 'top');
+  await applyHistory('Отменить', 'table');
+  await expectCell(2, 0, 'right', 'bottom');
+
+  await saveFileFromMenu();
+  await expect.poll(() => existsSync(projectPath)).toBe(true);
+  const saved = projectSchema.parse(JSON.parse(readFileSync(projectPath, 'utf8')));
+  const savedTable = saved.pages[0].elements.find((element) => element.type === 'table');
+  if (!savedTable) throw new Error('Saved table is missing');
+  await table.getByRole('button', { name: 'Выбрать столбец 2', exact: true }).click();
+  await expect(cell(0, 1)).toHaveAttribute('data-table-column', savedTable.columns[1]);
+  await table.getByRole('button', { name: 'Выбрать строку 2', exact: true }).click();
+  await expect(cell(1, 0)).toHaveAttribute('data-table-row', savedTable.rows[1].id);
+
+  await window.getByRole('button', { name: 'К проектам' }).click();
+  await window.getByRole('button', { name: 'Открыть проект markd-e2e-proposal' }).click();
+  await table.locator('.document-table-header').click();
+  for (let rowIndex = 0; rowIndex < 3; rowIndex += 1) {
+    for (let columnIndex = 0; columnIndex < 3; columnIndex += 1) {
+      await expectCell(rowIndex, columnIndex, rowIndex === 1 ? 'left' : columnIndex === 1 ? 'center' : 'right',
+        rowIndex === 1 ? 'top' : columnIndex === 1 ? 'middle' : 'bottom');
+    }
+  }
+  await cell(2, 2).locator('textarea').dblclick();
+  await expect(table.locator('[data-cell-selected="true"]')).toHaveCount(1);
+  await expect(cell(2, 2)).toHaveAttribute('data-table-column', savedTable.columns[2]);
   expect(runtimeErrors).toEqual([]);
 });
 
@@ -685,11 +950,9 @@ test('keeps the full image and white transparent background after saving and reo
   await expect(imageElement).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   await expect(imageElement.locator('img')).toHaveCSS('object-fit', 'contain');
 
-  await window.getByRole('button', { name: 'На весь лист' }).click();
-  await expect(window.getByLabel('X, мм')).toHaveValue('0');
-  await expect(window.getByLabel('Y, мм')).toHaveValue('0');
-  await expect(window.getByLabel('Ширина, мм')).toHaveValue('210');
-  await expect(window.getByLabel('Высота, мм')).toHaveValue('297');
+  await elementToolbar().getByRole('button', { name: 'На весь лист' }).click();
+  await expectNoGeometryControls();
+  await expectFullPageImage(imageElement);
 
   const moveHandle = imageElement.getByRole('button', { name: 'Переместить изображение' });
   const resizeHandle = imageElement.getByRole('button', { name: 'Изменить размер изображения' });
@@ -727,10 +990,8 @@ test('keeps the full image and white transparent background after saving and reo
 
   const reopenedImage = window.getByTestId('image-element');
   await reopenedImage.locator('img').click();
-  await expect(window.getByLabel('X, мм')).toHaveValue('0');
-  await expect(window.getByLabel('Y, мм')).toHaveValue('0');
-  await expect(window.getByLabel('Ширина, мм')).toHaveValue('210');
-  await expect(window.getByLabel('Высота, мм')).toHaveValue('297');
+  await expectNoGeometryControls();
+  await expectFullPageImage(reopenedImage);
   await expect(window.getByTestId('editor-page').first().locator('.page')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
   await expect(reopenedImage).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   await expect(reopenedImage.locator('img')).toHaveCSS('object-fit', 'fill');
@@ -745,11 +1006,11 @@ test('keeps the full image and white transparent background after saving and reo
 test('snaps image resizing to page edges and shows smart guides', async () => {
   await addElement(/^Изображение/);
   const imageElement = window.getByTestId('image-element');
+  await openGeometryFixture((project) => {
+    project.pages[0].elements.find((element) => element.type === 'image')!.rect =
+      { x: 0, y: 0, width: 200, height: 287 };
+  });
   await imageElement.locator('img').click();
-  await window.getByLabel('X, мм').fill('0');
-  await window.getByLabel('Y, мм').fill('0');
-  await window.getByLabel('Ширина, мм').fill('200');
-  await window.getByLabel('Высота, мм').fill('287');
 
   const page = window.getByTestId('editor-page').first().locator('.page');
   const resizeHandle = imageElement.getByRole('button', { name: 'Изменить размер изображения' });
@@ -776,8 +1037,8 @@ test('snaps image resizing to page edges and shows smart guides', async () => {
   await expect(page.getByTestId('snap-guide-horizontal')).toBeVisible();
   await window.mouse.up();
 
-  await expect(window.getByLabel('Ширина, мм')).toHaveValue('210');
-  await expect(window.getByLabel('Высота, мм')).toHaveValue('297');
+  await expectNoGeometryControls();
+  await expectFullPageImage(imageElement);
   await expect(page.getByTestId('snap-guide-vertical')).toHaveCount(0);
   await expect(page.getByTestId('snap-guide-horizontal')).toHaveCount(0);
   expect(runtimeErrors).toEqual([]);
@@ -787,19 +1048,14 @@ test('snaps component centers to each other and shows smart guides', async () =>
   await addElement(/^Прямоугольник/);
   const shapes = window.getByTestId('shape-element');
   const target = shapes.first();
-  await openInspectorSection('Положение');
-  await window.getByLabel('X, мм').fill('30');
-  await window.getByLabel('Y, мм').fill('50');
-  await window.getByLabel('Ширина, мм').fill('40');
-  await window.getByLabel('Высота, мм').fill('20');
-
   await addElement(/^Прямоугольник/);
   const moving = shapes.last();
-  await openInspectorSection('Положение');
-  await window.getByLabel('X, мм').fill('100');
-  await window.getByLabel('Y, мм').fill('100');
-  await window.getByLabel('Ширина, мм').fill('10');
-  await window.getByLabel('Высота, мм').fill('10');
+  await openGeometryFixture((project) => {
+    const shapes = project.pages[0].elements.filter((element) => element.type === 'shape');
+    shapes[0].rect = { x: 30, y: 50, width: 40, height: 20 };
+    shapes[1].rect = { x: 100, y: 100, width: 10, height: 10 };
+  });
+  await moving.locator('.canvas-element-content').click();
 
   const moveHandle = moving.getByRole('button', { name: 'Переместить фигуру' });
   const page = window.getByTestId('editor-page').first().locator('.page');
@@ -851,20 +1107,23 @@ test('isolates layers and persists text/table styling', async () => {
   await layeredText.getByRole('textbox', { name: 'Текст на странице' }).fill('Текст второго слоя');
 
   await window.getByRole('button', { name: /^Основной \d+$/ }).click();
-  await expect(layeredText.getByRole('textbox', { name: 'Текст на странице' })).toHaveCount(0);
-  await expect(layeredText.locator('.presentation-text')).toContainText('Текст второго слоя');
+  await expect(layeredText.getByRole('textbox', { name: 'Текст на странице' })).toHaveValue('Текст второго слоя');
+  await expect(window.getByRole('button', { name: /^Основной \d+$/ })).toHaveAttribute('aria-pressed', 'true');
 
-  await window.getByRole('button', { name: /^Изображения \d+$/ }).click();
   await layeredText.getByRole('textbox', { name: 'Текст на странице' }).click();
-  const textColor = window.getByLabel('Цвет текста: HEX');
+  await expect(window.getByRole('button', { name: /^Изображения \d+$/ })).toHaveAttribute('aria-pressed', 'true');
+  await layeredText.getByRole('textbox', { name: 'Текст на странице' }).click();
+  const textColor = elementToolbar().getByLabel('Цвет текста: выбор цвета', { exact: true });
   await textColor.fill('#123456');
-  await textColor.press('Enter');
   await expect.poll(() => layeredText.getByRole('textbox').evaluate((node) => getComputedStyle(node).color)).toBe('rgb(18, 52, 86)');
 
   await window.getByRole('button', { name: /^Основной \d+$/ }).click();
   const table = window.getByTestId('table-element').first();
   await table.locator('.document-table-header').click();
-  await window.getByRole('button', { name: 'Расположить текст справа' }).click();
+  await expect(elementToolbar().getByRole('button', { name: 'Выбрать всю таблицу', exact: true })).toHaveCount(0);
+  await table.getByRole('button', { name: 'Выбрать ячейку 1, 1', exact: true }).focus();
+  await window.keyboard.press('Escape');
+  await elementToolbar().getByRole('group', { name: 'Выравнивание текста', exact: true }).getByRole('button', { name: 'По правому краю', exact: true }).click();
   await expect.poll(() => table.locator('textarea').first().evaluate((node) => getComputedStyle(node).textAlign)).toBe('right');
 
   await saveFileFromMenu();
@@ -931,90 +1190,108 @@ test('lists layer elements and exposes stacking actions', async () => {
   expect(runtimeErrors).toEqual([]);
 });
 
-test('splits, resizes and independently scrolls the right sidebar panes', async () => {
-  await window.setViewportSize({ width: 1440, height: 900 });
-  const inspector = window.getByRole('complementary', { name: 'Инспектор свойств' });
-  const layersPanel = inspector.getByRole('region', { name: 'Слои и элементы' });
-  const propertiesSection = inspector.locator('.sidebar-properties');
-  const layersSection = inspector.locator('.sidebar-structure');
-  const propertiesPane = propertiesSection.locator('.inspector-properties-pane');
-  const layersPane = layersSection.locator('.inspector-layers-pane');
+test('keeps toolbar popovers and document structure independently scrollable', async () => {
+  await window.setViewportSize({ width: 1100, height: 560 });
+  const structure = window.getByRole('complementary', { name: 'Структура документа' });
+  const toolbar = elementToolbar();
+  const layersPanel = structure.getByRole('region', { name: 'Слои и элементы' });
+  const layersPane = structure.locator('.inspector-layers-pane');
   const canvasPane = window.getByRole('region', { name: 'Рабочая область документа' });
-  const propertiesSectionBounds = await propertiesSection.boundingBox();
-  const inspectorBounds = await inspector.boundingBox();
-  const propertiesBounds = await propertiesPane.boundingBox();
-  const layersBounds = await layersPane.boundingBox();
-  const layersSectionBounds = await layersSection.boundingBox();
-
-  expect(propertiesSectionBounds).not.toBeNull();
-  expect(inspectorBounds).not.toBeNull();
-  expect(propertiesBounds).not.toBeNull();
-  expect(layersBounds).not.toBeNull();
-  expect(layersSectionBounds).not.toBeNull();
-  expect(propertiesBounds!.y).toBeLessThan(layersBounds!.y);
-  expect(propertiesSectionBounds!.y).toBeGreaterThan(inspectorBounds!.y);
-  expect(layersSectionBounds!.y + layersSectionBounds!.height).toBeLessThan(inspectorBounds!.y + inspectorBounds!.height);
-  expect(layersSectionBounds!.y - (propertiesSectionBounds!.y + propertiesSectionBounds!.height)).toBeGreaterThan(8);
-  await expect(propertiesSection).toHaveCSS('border-radius', '11px');
-  await expect(layersSection).toHaveCSS('border-radius', '11px');
-  await expect(propertiesPane).toHaveCSS('overflow-y', 'auto');
+  await expect(toolbar).toHaveAttribute('aria-label', 'Панель инструментов элемента');
+  await expect(structure.locator('.inspector-panel')).toHaveCount(0);
+  await expect(structure.getByRole('separator', { name: 'Изменить высоту панелей' })).toHaveCount(0);
   await expect(layersPane).toHaveCSS('overflow-y', 'auto');
-  await expect(propertiesPane).toHaveCSS('scrollbar-width', 'thin');
-  await expect(propertiesPane).toHaveCSS('scrollbar-gutter', 'auto');
-  await expect(propertiesPane).toHaveCSS('scrollbar-color', 'rgba(67, 72, 65, 0.28) rgba(0, 0, 0, 0)');
-  await inspector.getByRole('button', { name: 'Добавить слой' }).focus();
-  await inspector.hover({ position: { x: 20, y: 20 } });
-  await expect(canvasPane).toHaveCSS('scrollbar-color', 'rgba(0, 0, 0, 0) rgba(0, 0, 0, 0)');
-  await canvasPane.hover({ position: { x: 12, y: 12 } });
-  await expect(canvasPane).toHaveCSS('scrollbar-color', 'rgba(67, 72, 65, 0.28) rgba(0, 0, 0, 0)');
+  await expect(layersPane).toHaveCSS('scrollbar-width', 'thin');
 
-  const divider = inspector.getByRole('separator', { name: 'Изменить высоту панелей' });
-  await expect(divider).toHaveAttribute('aria-valuenow', '54');
-  await divider.focus();
-  await window.keyboard.press('ArrowDown');
-  await expect(divider).toHaveAttribute('aria-valuenow', '58');
-
-  const resizedPropertiesBounds = await propertiesSection.boundingBox();
-  expect(resizedPropertiesBounds).not.toBeNull();
-  expect(resizedPropertiesBounds!.height).toBeGreaterThan(propertiesSectionBounds!.height);
-
-  await dragBy(divider, 0, -48);
-  await expect(divider).not.toHaveAttribute('aria-valuenow', '58');
-  const pointerResizedPropertiesBounds = await propertiesSection.boundingBox();
-  expect(pointerResizedPropertiesBounds).not.toBeNull();
-  expect(pointerResizedPropertiesBounds!.height).toBeLessThan(resizedPropertiesBounds!.height);
-
-  const mainLayerToggle = window.getByRole('button', { name: 'Раскрыть Основной' });
-  const textItem = window.getByRole('button', { name: 'Текст: Коммерческое предложение' });
+  const mainLayerToggle = layersPanel.getByRole('button', { name: 'Раскрыть Основной' });
+  const textItem = layersPanel.getByRole('button', { name: 'Текст: Коммерческое предложение' });
   await expect(mainLayerToggle).toHaveAttribute('aria-expanded', 'false');
   await expect(textItem).toHaveCount(0);
-
   await layersPanel.getByRole('button', { name: /^Основной \d+$/ }).click();
   await expect(mainLayerToggle).toHaveAttribute('aria-expanded', 'false');
-
   await mainLayerToggle.focus();
-  await window.keyboard.press('Enter');
+  await mainLayerToggle.press('Enter');
   await expect(textItem).toBeVisible();
 
-  await window.getByRole('button', { name: 'Добавить слой' }).click();
-  await expect(window.getByRole('button', { name: 'Раскрыть Слой 2' })).toHaveAttribute('aria-expanded', 'false');
-  await expect(window.getByRole('button', { name: 'Раскрыть Основной' })).toHaveAttribute('aria-expanded', 'false');
+  await structure.getByRole('button', { name: 'Добавить слой' }).click();
+  await expect(layersPanel.getByRole('button', { name: 'Раскрыть Слой 2' })).toHaveAttribute('aria-expanded', 'false');
+  await expect(mainLayerToggle).toHaveAttribute('aria-expanded', 'false');
   await expect(textItem).toHaveCount(0);
+  for (let index = 0; index < 12; index += 1) {
+    await structure.getByRole('button', { name: 'Добавить слой' }).click();
+  }
 
-  await window.getByRole('button', { name: 'Раскрыть Основной' }).click();
-  await window.getByRole('button', { name: 'Таблица: Позиции' }).click();
-  const scrollState = await propertiesPane.evaluate((element) => {
-    element.scrollTop = 160;
-    return { scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight };
+  await window.setViewportSize({ width: 1100, height: 420 });
+  await window.getByTestId('table-element').first().locator('.document-table-header').click();
+  await openInspectorSection('Текст и ячейки');
+  await toolbar.getByRole('checkbox', { name: 'Чередовать цвет строк' }).check();
+  const colors = await openInspectorSection('Цвета');
+  const propertiesPane = toolbar.locator('.inspector-section-content:visible');
+  await expect(propertiesPane).toHaveCount(1);
+  await expect(propertiesPane).toHaveCSS('overflow-y', 'auto');
+  const [toolbarBounds, canvasBounds, structureBounds] = await Promise.all([
+    toolbar.boundingBox(), canvasPane.boundingBox(), structure.boundingBox()
+  ]);
+  expect(toolbarBounds).not.toBeNull();
+  expect(canvasBounds).not.toBeNull();
+  expect(structureBounds).not.toBeNull();
+  expect(toolbarBounds!.y + toolbarBounds!.height).toBeLessThanOrEqual(canvasBounds!.y + 1);
+  expect(canvasBounds!.x + canvasBounds!.width).toBeLessThanOrEqual(structureBounds!.x + 1);
+
+  const layersScroll = await layersPane.evaluate((node) => {
+    node.scrollTop = 120;
+    return { top: node.scrollTop, height: node.scrollHeight, viewport: node.clientHeight };
   });
-  expect(scrollState.scrollHeight).toBeGreaterThan(scrollState.clientHeight);
-  expect(scrollState.scrollTop).toBeGreaterThan(0);
-  expect(await layersPane.evaluate((element) => element.scrollTop)).toBe(0);
+  expect(layersScroll.height).toBeGreaterThan(layersScroll.viewport);
+  expect(layersScroll.top).toBeGreaterThan(0);
+  expect(await propertiesPane.evaluate((node) => node.scrollTop)).toBe(0);
+  const propertiesScroll = await propertiesPane.evaluate((node) => {
+    node.scrollTop = 120;
+    return { top: node.scrollTop, height: node.scrollHeight, viewport: node.clientHeight };
+  });
+  expect(propertiesScroll.height).toBeGreaterThan(propertiesScroll.viewport);
+  expect(propertiesScroll.top).toBeGreaterThan(0);
+  expect(await layersPane.evaluate((node) => node.scrollTop)).toBe(layersScroll.top);
 
+  await propertiesPane.getByRole('textbox').first().focus();
+  await window.keyboard.press('Escape');
+  await expect(colors).toHaveAttribute('aria-expanded', 'false');
+  await expect(colors).toBeFocused();
+  await canvasPane.hover({ position: { x: 12, y: 12 } });
+  await expect(canvasPane).toHaveCSS('scrollbar-color', 'rgba(67, 72, 65, 0.28) rgba(0, 0, 0, 0)');
+  await structure.hover({ position: { x: 20, y: 20 } });
+  await expect(canvasPane).toHaveCSS('scrollbar-color', 'rgba(0, 0, 0, 0) rgba(0, 0, 0, 0)');
+
+  await window.getByRole('button', { name: 'Структура', exact: true }).click();
+  await expect(structure).toBeHidden();
+  await expect(toolbar).toBeVisible();
+  await window.getByRole('button', { name: 'Структура', exact: true }).click();
+  await expect(structure).toBeVisible();
   await window.setViewportSize({ width: 1100, height: 360 });
-  await expect(inspector.getByRole('heading', { name: 'Свойства' })).toBeVisible();
-  await expect(inspector.getByRole('heading', { name: 'Структура' })).toBeVisible();
-  await expect(divider).toBeVisible();
+  await expect(toolbar).toBeVisible();
+  await expect(structure.getByRole('heading', { name: 'Структура' })).toBeVisible();
+  await expect(window.getByRole('separator', { name: 'Изменить ширину правой панели' })).toBeVisible();
+
+  await window.setViewportSize({ width: 700, height: 560 });
+  await expect(structure).toBeHidden();
+  await expect(toolbar).toHaveCSS('overflow-x', 'auto');
+  await window.getByRole('button', { name: 'Структура', exact: true }).click();
+  await expect(structure).toBeVisible();
+  const narrowLayersScroll = await layersPane.evaluate((node) => {
+    node.scrollTop = 100;
+    return node.scrollTop;
+  });
+  expect(narrowLayersScroll).toBeGreaterThan(0);
+  const canvasScroll = await canvasPane.evaluate((node) => node.scrollTop);
+  const toolbarScroll = await toolbar.evaluate((node) => {
+    node.scrollLeft = 120;
+    return { left: node.scrollLeft, width: node.scrollWidth, viewport: node.clientWidth };
+  });
+  expect(toolbarScroll.width).toBeGreaterThan(toolbarScroll.viewport);
+  expect(toolbarScroll.left).toBeGreaterThan(0);
+  expect(await layersPane.evaluate((node) => node.scrollTop)).toBe(narrowLayersScroll);
+  expect(await canvasPane.evaluate((node) => node.scrollTop)).toBe(canvasScroll);
+  await expect.poll(() => window.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   expect(runtimeErrors).toEqual([]);
 });
 
@@ -1051,29 +1328,78 @@ test('keeps layer visibility, locking, ordering, moving and deletion usable in t
   expect(runtimeErrors).toEqual([]);
 });
 
+test('activates a clicked element layer while protecting locked and hidden layers', async () => {
+  const layers = window.getByRole('region', { name: 'Слои и элементы' });
+  const mainLayer = layers.getByRole('button', { name: /^Основной \d+$/ });
+  const otherLayer = layers.getByRole('button', { name: /^Слой 2 \d+$/ });
+  await window.getByRole('button', { name: 'Добавить слой' }).click();
+  await addElement(/^Прямоугольник/);
+  const shape = window.getByTestId('shape-element');
+  await dragBy(shape.getByRole('button', { name: 'Переместить фигуру' }), 0, 100);
+  await window.keyboard.press('Escape');
+  await mainLayer.click();
+  await expect(mainLayer).toHaveAttribute('aria-pressed', 'true');
+  await shape.locator('.canvas-element-content').click();
+  await expect(otherLayer).toHaveAttribute('aria-pressed', 'true');
+  await expect(shape.getByRole('button', { name: 'Переместить фигуру' })).toBeVisible();
+
+  await mainLayer.click();
+  await layers.getByRole('button', { name: 'Раскрыть Слой 2' }).click();
+  await layers.getByRole('button', { name: 'Заблокировать Слой 2' }).click();
+  await expect(otherLayer).toBeDisabled();
+  const shapeBounds = await shape.boundingBox();
+  expect(shapeBounds).not.toBeNull();
+  const clickX = shapeBounds!.x + shapeBounds!.width / 2;
+  const clickY = shapeBounds!.y + shapeBounds!.height / 2;
+  await window.mouse.click(clickX, clickY);
+  await expect(mainLayer).toHaveAttribute('aria-pressed', 'true');
+  await expect(shape.getByRole('button', { name: 'Переместить фигуру' })).toHaveCount(0);
+  await expect(shape.getByRole('textbox')).toHaveCount(0);
+
+  await layers.getByRole('button', { name: 'Разблокировать Слой 2' }).click();
+  await layers.getByRole('button', { name: 'Скрыть Слой 2' }).click();
+  await expect(otherLayer).toBeDisabled();
+  await expect(shape).toHaveCount(0);
+  await window.mouse.click(clickX, clickY);
+  await expect(mainLayer).toHaveAttribute('aria-pressed', 'true');
+  await expect(shape).toHaveCount(0);
+  await layers.getByRole('button', { name: 'Показать Слой 2' }).click();
+  await shape.locator('.canvas-element-content').click();
+  await expect(otherLayer).toHaveAttribute('aria-pressed', 'true');
+  await expect(shape.getByRole('button', { name: 'Переместить фигуру' })).toBeVisible();
+  expect(runtimeErrors).toEqual([]);
+});
+
 test('configures table title, header, rows and borders', async () => {
   const table = window.getByTestId('table-element').first();
   await table.locator('.document-table-header').click();
   await expect(window.getByRole('heading', { name: 'Таблица' })).toBeVisible();
 
   const heightBefore = (await table.boundingBox())?.height ?? 0;
-  await window.getByRole('checkbox', { name: 'Показывать заголовок блока' }).uncheck();
+  await openInspectorSection('Текст и ячейки');
+  await elementToolbar().getByRole('checkbox', { name: 'Показывать заголовок блока' }).uncheck();
   await expect(table.locator('.document-table-header')).toHaveCount(0);
   await expect.poll(async () => (await table.boundingBox())?.height ?? 0).toBeLessThan(heightBefore);
 
-  await window.getByRole('button', { name: 'Добавить строку', exact: true }).click();
-  await window.getByRole('button', { name: 'Добавить строку', exact: true }).click();
-  await window.getByRole('checkbox', { name: 'Чередовать цвет строк' }).check();
+  await table.getByRole('button', { name: 'Добавить строку таблицы', exact: true }).click();
+  await table.getByRole('button', { name: 'Добавить строку таблицы', exact: true }).click();
+  await openInspectorSection('Текст и ячейки');
+  await elementToolbar().getByRole('checkbox', { name: 'Чередовать цвет строк' }).check();
   await openInspectorSection('Цвета');
-  await window.getByLabel('Чётные строки: HEX').fill('#ddeeff');
-  await window.getByLabel('Чётные строки: HEX').press('Enter');
-  await window.getByLabel('Размер текста, px').fill('13');
-  await window.getByLabel('Высота строки, px').fill('46');
-  await window.getByLabel('Отступ ячейки, px').fill('10');
-  await window.getByRole('button', { name: 'Расположить текст снизу' }).click();
+  await elementToolbar().getByLabel('Чётные строки: HEX').fill('#ddeeff');
+  await elementToolbar().getByLabel('Чётные строки: HEX').press('Enter');
+  await openInspectorSection('Текст и ячейки');
+  await elementToolbar().getByLabel('Размер текста, px').fill('13');
+  await elementToolbar().getByLabel('Высота выбранных строк, px').fill('46');
+  await elementToolbar().getByLabel('Отступ ячейки, px').fill('10');
+  await elementToolbar().getByRole('button', { name: 'Текст и ячейки', exact: true }).click();
+  await expect(elementToolbar().getByRole('button', { name: 'Выбрать всю таблицу', exact: true })).toHaveCount(0);
+  await table.getByRole('button', { name: 'Выбрать ячейку 1, 1', exact: true }).focus();
+  await window.keyboard.press('Escape');
+  await elementToolbar().getByRole('group', { name: 'Вертикальное выравнивание', exact: true }).getByRole('button', { name: 'По нижнему краю', exact: true }).click();
   await openInspectorSection('Границы');
-  await window.getByLabel('Толщина, px').fill('2');
-  await window.getByLabel('Стиль границы').selectOption('dashed');
+  await elementToolbar().getByLabel('Толщина, px').fill('2');
+  await elementToolbar().getByLabel('Стиль границы').selectOption('dashed');
 
   await expect(table.locator('thead th')).toHaveCount(3);
   await expect(table.locator('tbody tr')).toHaveCount(2);
@@ -1145,7 +1471,8 @@ test('opens and upgrades an existing schemaVersion 1 project', async () => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
   }, legacyProjectPath);
 
-  await window.getByRole('button', { name: /^Открыть(?: \.markd)?$/ }).click();
+  await window.getByRole('button', { name: 'Файл', exact: true }).click();
+  await window.getByRole('menuitem', { name: 'Открыть', exact: true }).click();
   await expect(window.getByRole('heading', { name: 'Архивное КП' })).toBeVisible();
   const legacyText = window.getByTestId('text-element').getByRole('textbox', { name: 'Текст на странице' });
   await expect(legacyText).toHaveValue('Документ из предыдущей версии');
@@ -1171,12 +1498,13 @@ test('edits fields, alignment, long content, clean preview, reopening and PDF', 
   const textField = window.getByTestId('text-field-element');
   await expect(textField).toHaveCount(1);
   await expect(window.getByRole('heading', { name: 'Текстовое поле' })).toBeVisible();
-  await window.getByLabel('Подпись', { exact: true }).fill('Email клиента');
-  await window.getByLabel('Значение').fill('sales.department.with.a.very.long.address@example-company.test');
-  await window.getByLabel('Placeholder', { exact: true }).fill('name@example.com');
-  await window.getByRole('button', { name: /^Выбрано / }).click();
+  await textField.getByRole('textbox').fill('sales.department.with.a.very.long.address@example-company.test');
+  await openInspectorSection('Поле');
+  await elementToolbar().getByLabel('Подпись', { exact: true }).fill('Email клиента');
+  await elementToolbar().getByLabel('Placeholder', { exact: true }).fill('name@example.com');
+  await elementToolbar().getByRole('button', { name: /^Выбрано / }).click();
   await window.getByRole('dialog', { name: 'Выбор иконки' }).getByRole('button', { name: 'Почта', exact: true }).click();
-  const iconPickerTrigger = window.getByRole('button', { name: /^Выбрано / });
+  const iconPickerTrigger = elementToolbar().getByRole('button', { name: /^Выбрано / });
   await iconPickerTrigger.click();
   const iconPicker = window.getByRole('dialog', { name: 'Выбор иконки' });
   const iconSearch = iconPicker.getByRole('searchbox', { name: 'Поиск иконки' });
@@ -1188,37 +1516,43 @@ test('edits fields, alignment, long content, clean preview, reopening and PDF', 
   await window.keyboard.press('Escape');
   await expect(iconPickerTrigger).toBeFocused();
   await openInspectorSection('Цвета');
-  await window.getByLabel('Иконка: HEX').fill('#c2410c');
-  await window.getByLabel('Иконка: HEX').press('Enter');
-  await window.getByRole('checkbox', { name: 'Прозрачный фон' }).check();
-  await window.getByRole('checkbox', { name: 'Показывать границу' }).uncheck();
-  await window.getByRole('checkbox', { name: 'Показывать подпись' }).uncheck();
-  await window.getByRole('checkbox', { name: 'Показывать placeholder' }).uncheck();
+  await elementToolbar().getByLabel('Иконка: HEX').fill('#c2410c');
+  await elementToolbar().getByLabel('Иконка: HEX').press('Enter');
+  await elementToolbar().getByRole('checkbox', { name: 'Прозрачный фон' }).check();
+  await elementToolbar().getByRole('checkbox', { name: 'Показывать границу' }).uncheck();
+  await openInspectorSection('Поле');
+  await elementToolbar().getByRole('checkbox', { name: 'Показывать подпись' }).uncheck();
+  await elementToolbar().getByRole('checkbox', { name: 'Показывать placeholder' }).uncheck();
   await expect(textField.locator('.field-label')).toHaveCount(0);
   await expect(textField.getByRole('textbox')).toHaveAttribute('placeholder', '');
   await expect.poll(() => textField.locator('.field-leading').evaluate((node) => getComputedStyle(node).color)).toBe('rgb(194, 65, 12)');
   await expect.poll(() => textField.locator('.field-control').evaluate((node) => getComputedStyle(node).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
   await expect.poll(() => textField.locator('.field-control').evaluate((node) => getComputedStyle(node).borderTopWidth)).toBe('0px');
-  await window.getByRole('button', { name: 'Расположить текст слева' }).click();
-  await expect(window.getByRole('button', { name: 'Расположить текст слева' })).toHaveAttribute('aria-pressed', 'false');
+  await expect(elementToolbar().getByRole('button', { name: 'Текст', exact: true })).toHaveCount(0);
+  const horizontal = elementToolbar().getByRole('group', { name: 'Выравнивание текста', exact: true });
+  const vertical = elementToolbar().getByRole('group', { name: 'Вертикальное выравнивание', exact: true });
+  await horizontal.getByRole('button', { name: 'По центру', exact: true }).click();
+  await expect(horizontal.getByRole('button', { name: 'По центру', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => textField.getByRole('textbox').evaluate((node) => getComputedStyle(node).textAlign)).toBe('center');
 
-  await openInspectorSection('Положение');
-  const widthControl = window.getByLabel('Ширина, мм');
-  await widthControl.fill('112');
-  await expect(widthControl).toHaveValue('112');
+  await expectNoGeometryControls();
+  const widthBefore = (await textField.boundingBox())!.width;
+  await dragBy(textField.getByRole('button', { name: 'Изменить размер текстового поля' }), 30, 0);
+  expect((await textField.boundingBox())!.width).toBeGreaterThan(widthBefore + 15);
   await expect.poll(() => textField.getByRole('textbox').evaluate((node) => getComputedStyle(node).textAlign)).toBe('center');
-  await window.getByRole('button', { name: 'Расположить текст справа' }).click();
-  await window.getByRole('button', { name: 'Расположить текст сверху' }).click();
-  await expect(window.getByRole('button', { name: 'Расположить текст справа' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(window.getByRole('button', { name: 'Расположить текст сверху' })).toHaveAttribute('aria-pressed', 'true');
+  await horizontal.getByRole('button', { name: 'По правому краю', exact: true }).click();
+  await vertical.getByRole('button', { name: 'Сверху', exact: true }).click();
+  await expect(horizontal.getByRole('button', { name: 'По правому краю', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(vertical.getByRole('button', { name: 'Сверху', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => textField.getByRole('textbox').evaluate((node) => getComputedStyle(node).textAlign)).toBe('right');
-  await window.getByRole('button', { name: 'Расположить текст слева' }).click();
-  await window.getByRole('button', { name: 'Расположить текст снизу' }).click();
-  await expect(window.getByRole('button', { name: 'Расположить текст справа' })).toHaveAttribute('aria-pressed', 'false');
-  await expect(window.getByRole('button', { name: 'Расположить текст сверху' })).toHaveAttribute('aria-pressed', 'false');
-  await expect(window.getByRole('button', { name: 'Расположить текст слева' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(window.getByRole('button', { name: 'Расположить текст снизу' })).toHaveAttribute('aria-pressed', 'true');
+  await vertical.getByRole('button', { name: 'По середине', exact: true }).click();
+  await expect(textField.getByRole('textbox')).toHaveCSS('align-self', 'center');
+  await horizontal.getByRole('button', { name: 'По левому краю', exact: true }).click();
+  await vertical.getByRole('button', { name: 'Снизу', exact: true }).click();
+  await expect(horizontal.getByRole('button', { name: 'По правому краю', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await expect(vertical.getByRole('button', { name: 'Сверху', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await expect(horizontal.getByRole('button', { name: 'По левому краю', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(vertical.getByRole('button', { name: 'Снизу', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => textField.getByRole('textbox').evaluate((node) => getComputedStyle(node).textAlign)).toBe('left');
   await expect.poll(async () => {
     const controlBox = await textField.locator('.field-control').boundingBox();
@@ -1231,28 +1565,35 @@ test('edits fields, alignment, long content, clean preview, reopening and PDF', 
   await addElement(/^Выпадающий список/);
   const selectField = window.getByTestId('select-field-element');
   await expect(selectField).toHaveCount(1);
-  await window.getByLabel('Подпись', { exact: true }).fill('Пакет услуг');
-  await window.getByLabel('Placeholder', { exact: true }).fill('Выберите пакет услуг');
-  await window.getByRole('button', { name: 'Добавить вариант' }).click();
-  await window.getByRole('textbox', { name: 'Вариант 3', exact: true }).fill('Премиальный пакет с очень длинным названием для международного коммерческого предложения');
-  const selectedOptionId = await window.getByLabel('Выбранный вариант').locator('option').nth(3).getAttribute('value');
+  await openInspectorSection('Варианты');
+  await elementToolbar().getByLabel('Подпись', { exact: true }).fill('Пакет услуг');
+  await elementToolbar().getByLabel('Placeholder', { exact: true }).fill('Выберите пакет услуг');
+  await openInspectorSection('Варианты');
+  await elementToolbar().getByRole('button', { name: 'Добавить вариант' }).click();
+  await elementToolbar().getByRole('textbox', { name: 'Вариант 3', exact: true }).fill('Премиальный пакет с очень длинным названием для международного коммерческого предложения');
+  await elementToolbar().getByRole('button', { name: 'Варианты', exact: true }).click();
+  const selectedOptionId = await selectField.locator('select option').nth(3).getAttribute('value');
   expect(selectedOptionId).toBeTruthy();
-  await window.getByLabel('Выбранный вариант').selectOption(selectedOptionId!);
+  await selectField.locator('select').selectOption(selectedOptionId!);
   await expect(selectField.locator('select')).toHaveValue(selectedOptionId!);
 
   await addElement(/^Таблица/);
   const tables = window.getByTestId('table-element');
   await expect(tables).toHaveCount(2);
   const newTable = tables.nth(1);
+  await newTable.locator('textarea').nth(0).dblclick();
   await newTable.locator('textarea').nth(0).fill('Очень длинное русское значение без выхода за границы компонента и с корректным переносом строк');
+  await newTable.locator('textarea').nth(1).dblclick();
   await newTable.locator('textarea').nth(1).fill('LongEnglishValueWithoutSpacesThatMustWrapInsideTheTableCellWithoutBreakingTheDocument');
   await window.screenshot({ path: screenshotPaths.table, fullPage: false });
 
   await addElement(/^Текст Свободный/);
   const newText = window.getByTestId('text-element').last();
   await newText.getByRole('textbox', { name: 'Текст на странице' }).fill('Первая строка с длинным русским текстом\nSecond line with a very long English value that must wrap inside the fixed frame.');
-  await openInspectorSection('Положение');
-  await window.getByLabel('Высота, мм').fill('6');
+  await openGeometryFixture((project) => {
+    project.pages[0].elements.filter((element) => element.type === 'text').at(-1)!.rect.height = 6;
+  });
+  await newText.getByRole('textbox', { name: 'Текст на странице' }).click();
   await expect(newText.locator('.overflow-warning')).toBeVisible();
 
   await window.getByRole('button', { name: 'Открыть предпросмотр' }).click();
@@ -1303,7 +1644,8 @@ test('edits fields, alignment, long content, clean preview, reopening and PDF', 
   });
   expect(saved.pages[0].elements.some((element) => element.type === 'selectField')).toBe(true);
 
-  await window.getByRole('button', { name: /^Открыть(?: \.markd)?$/ }).click();
+  await window.getByRole('button', { name: 'Файл', exact: true }).click();
+  await window.getByRole('menuitem', { name: 'Открыть', exact: true }).click();
   await expect(window.getByText(/Открыт markd-e2e-proposal.markd/)).toBeVisible();
   await expect(window.getByTestId('text-field-element').getByRole('textbox')).toHaveValue('sales.department.with.a.very.long.address@example-company.test');
   await expect(window.getByTestId('text-field-element').locator('.field-label')).toHaveCount(0);

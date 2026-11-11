@@ -145,7 +145,8 @@ test('active page, page deletion and native history operate on the correct docum
   await expect(page.getByTestId('editor-page').nth(1).getByTestId('text-element')).toHaveCount(0);
   await menu('redo');
   await expect(page.getByTestId('editor-page').nth(1).getByTestId('text-element')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Удалить страницу', exact: true }).click();
+  await page.getByRole('button', { name: 'Действия со страницей', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Удалить страницу', exact: true }).click();
   await expect(page.getByTestId('editor-page')).toHaveCount(1);
   await menu('undo');
   await expect(page.getByTestId('editor-page')).toHaveCount(2);
@@ -198,6 +199,7 @@ test('fit width keeps the page in the visible canvas at 1024px', async () => {
   const canvas = await page.locator('.canvas-col').boundingBox();
   const paper = await page.locator('.page').first().boundingBox();
   expect(paper!.width).toBeLessThan(canvas!.width);
-  await page.getByRole('button', { name: 'Свойства', exact: true }).click();
-  await expect(page.getByRole('complementary', { name: 'Инспектор свойств' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Структура', exact: true }).click();
+  await expect(page.getByRole('complementary', { name: 'Структура документа' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Панель инструментов элемента' })).toBeVisible();
 });

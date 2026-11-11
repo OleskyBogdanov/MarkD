@@ -1,8 +1,9 @@
 import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore } from '@/renderer/store/useEditorStore';
 import { flushPendingEdits } from '@/renderer/domain/pendingEdits';
+import { ActionMenu } from '@/renderer/components/ui/ActionMenu';
 
-export const PageNavigator = ({ onError }: { onError: (message: string) => void }) => {
+export const PageNavigator = ({ onError, editable = true }: { onError: (message: string) => void; editable?: boolean }) => {
   const { pages, activePageId } = useEditorStore(useShallow(state => ({ pages: state.project.pages, activePageId: state.activePageId })));
   const index = Math.max(0, pages.findIndex(page => page.id === activePageId));
   const current = pages[index];
@@ -19,9 +20,11 @@ export const PageNavigator = ({ onError }: { onError: (message: string) => void 
     <label>Страница <select aria-label="Текущая страница" value={current.id} onChange={event => go(event.currentTarget.value)}>
       {pages.map((page, i) => <option key={page.id} value={page.id}>{i + 1} из {pages.length}</option>)}
     </select></label>
-    <button type="button" onClick={() => run(() => useEditorStore.getState().duplicatePage(current.id))}>Дублировать страницу</button>
-    <button type="button" disabled={index === 0} onClick={() => run(() => useEditorStore.getState().movePage(index, index - 1))}>Выше</button>
-    <button type="button" disabled={index === pages.length - 1} onClick={() => run(() => useEditorStore.getState().movePage(index, index + 1))}>Ниже</button>
-    <button type="button" disabled={pages.length === 1} onClick={() => run(() => useEditorStore.getState().deletePage(current.id))}>Удалить страницу</button>
+    {editable ? <ActionMenu label="Действия со страницей" above iconOnly actions={[
+      { label: 'Дублировать страницу', run: () => run(() => useEditorStore.getState().duplicatePage(current.id)) },
+      { label: 'Выше', disabled: index === 0, run: () => run(() => useEditorStore.getState().movePage(index, index - 1)) },
+      { label: 'Ниже', disabled: index === pages.length - 1, run: () => run(() => useEditorStore.getState().movePage(index, index + 1)) },
+      { label: 'Удалить страницу', disabled: pages.length === 1, destructive: true, run: () => run(() => useEditorStore.getState().deletePage(current.id)) }
+    ]} /> : null}
   </nav>;
 };

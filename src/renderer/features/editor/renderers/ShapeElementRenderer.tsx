@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -13,6 +12,7 @@ import { BufferedTextarea } from '@/renderer/components/ui/BufferedTextControl';
 import './shape-element.css';
 import { ElementFrame } from './ElementFrame';
 import { fontFamilyForId } from '@/renderer/domain/fontRegistry';
+import { useTextOverflow } from '@/renderer/components/ui/useTextOverflow';
 
 type ShapeElementRendererProps = {
   element: KpShapeElement;
@@ -47,8 +47,8 @@ export const ShapeElementRenderer = ({
 }: ShapeElementRendererProps) => {
   const textRef = useRef<HTMLTextAreaElement | HTMLDivElement>(null);
   const [editingText, setEditingText] = useState(false);
-  const [hasOverflow, setHasOverflow] = useState(false);
   const supportsText = element.shape !== 'line';
+  const hasOverflow = useTextOverflow(textRef, mode === 'edit' && supportsText);
   const fill = element.style.fillTransparent || element.shape === 'line' ? 'none' : element.style.fillColor;
   const strokeWidth = element.style.strokeWidth * zoom;
   const cornerRadiusX = Math.min(49, (element.style.cornerRadius * zoom * 100) / Math.max(rect.width * scale, 1));
@@ -80,15 +80,6 @@ export const ShapeElementRenderer = ({
     textRef.current.select();
   }, [editingText]);
 
-  useLayoutEffect(() => {
-    if (mode !== 'edit' || !supportsText || !textRef.current) {
-      setHasOverflow(false);
-      return;
-    }
-    const node = textRef.current;
-    setHasOverflow(node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1);
-  }, [editingText, element.text, element.textStyle, mode, rect.height, rect.width, supportsText, zoom]);
-
   const startTextEditing = (event: ReactMouseEvent<HTMLElement>): void => {
     if (!supportsText || mode !== 'edit') return;
     event.stopPropagation();
@@ -100,6 +91,15 @@ export const ShapeElementRenderer = ({
     if (event.key !== 'Escape') return;
     event.preventDefault();
     event.currentTarget.blur();
+    event.currentTarget.closest<HTMLElement>('.shape-element')?.focus();
+  };
+
+  const startTextEditingFromKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (event.target !== event.currentTarget || !selected || !supportsText) return;
+    if (event.key !== 'Enter' && event.key !== 'F2') return;
+    event.preventDefault();
+    event.stopPropagation();
+    setEditingText(true);
   };
 
   return (
@@ -115,21 +115,13 @@ export const ShapeElementRenderer = ({
       resizeLabel="Изменить размер фигуры"
       moveTestId="shape-drag-handle"
       hasOverflow={hasOverflow}
+      tabIndex={supportsText && selected ? 0 : undefined}
+      ariaLabel={supportsText ? 'Фигура: Enter или F2 для редактирования текста' : undefined}
       onSelect={onSelect}
+      onKeyDown={startTextEditingFromKeyboard}
       onDoubleClick={supportsText ? startTextEditing : undefined}
       onMoveStart={onMoveStart}
       onResizeStart={onResizeStart}
-      chrome={supportsText ? (
-        <button
-          type="button"
-          className="shape-text-edit-button"
-          aria-label="Редактировать текст фигуры"
-          title="Редактировать текст фигуры"
-          onClick={startTextEditing}
-        >
-          Текст
-        </button>
-      ) : undefined}
     >
       <svg className="document-shape" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         {element.shape === 'rectangle' ? <rect x="1" y="1" width="98" height="98" rx={cornerRadiusX} ry={cornerRadiusY} style={commonStyle} /> : null}
@@ -157,6 +149,7 @@ export const ShapeElementRenderer = ({
             <div
               ref={textRef as React.RefObject<HTMLDivElement>}
               className="shape-text-presentation"
+              data-overflow-text
               style={textStyle}
             >
               {element.text}

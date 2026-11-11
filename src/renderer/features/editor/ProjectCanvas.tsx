@@ -175,7 +175,6 @@ const buildPaginatedPages = (project: KpProject): RenderedPage[] => project.page
 export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps) => {
   const {
     selected,
-    activeLayerId,
     select,
     updateElementRect,
     updateText,
@@ -184,8 +183,7 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
     updateSelectField,
     addTableRow,
     addTableColumn,
-    deleteTableRow,
-    deleteTableColumn,
+    updateTableHeader,
     updateTableCell,
     resizeTableColumnBoundary,
     updateTableRowHeight,
@@ -193,7 +191,6 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
     addImage
   } = useEditorStore(useShallow((state) => ({
     selected: state.selected,
-    activeLayerId: state.activeLayerId,
     select: state.select,
     updateElementRect: state.updateElementRect,
     updateText: state.updateText,
@@ -202,8 +199,7 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
     updateSelectField: state.updateSelectField,
     addTableRow: state.addTableRow,
     addTableColumn: state.addTableColumn,
-    deleteTableRow: state.deleteTableRow,
-    deleteTableColumn: state.deleteTableColumn,
+    updateTableHeader: state.updateTableHeader,
     updateTableCell: state.updateTableCell,
     resizeTableColumnBoundary: state.resizeTableColumnBoundary,
     updateTableRowHeight: state.updateTableRowHeight,
@@ -312,7 +308,7 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
     const element = page?.elements.find((item) => item.id === elementId);
     const layer = element ? layersById.get(element.layerId) : undefined;
     const pageElement = pageRefs.current.get(pageId);
-    if (!page || !element || !layer || layer.id !== activeLayerId || !layer.visible || layer.locked || !pageElement) return;
+    if (!page || !element || !layer?.visible || layer.locked || !pageElement) return;
     const key = `${pageId}:${elementId}`;
     const startRect = draftRectsRef.current[key] ?? draftRects[key] ?? element.rect;
     const pageRect = pageElement.getBoundingClientRect();
@@ -406,7 +402,7 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
               ) : null}
               {page.elements.map(({ element, sourcePageId }) => {
                 const layer = layersById.get(element.layerId);
-                const interactive = renderMode === 'edit' && layer?.id === activeLayerId && layer.visible && !layer.locked;
+                const interactive = renderMode === 'edit' && Boolean(layer?.visible && !layer.locked);
                 const elementMode: RenderMode = renderMode === 'edit' && !interactive ? 'preview' : renderMode;
                 const isSelected = interactive && selected.type === 'element' && selected.pageId === sourcePageId && selected.elementId === element.id;
                 const rect = resolveRect(sourcePageId, element.id, element.rect);
@@ -447,13 +443,19 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
                     rect={rect}
                     scale={scale}
                     selected={isSelected}
+                    sourceTable={project.pages.find((sourcePage) => sourcePage.id === sourcePageId)?.elements.find((sourceElement): sourceElement is KpTableElement => sourceElement.id === element.id && sourceElement.type === 'table') ?? element}
+                    tableRange={isSelected && selected.type === 'element' ? selected.tableRange : undefined}
+                    tableCell={isSelected && selected.type === 'element' ? selected.tableCell : undefined}
+                    onRangeSelect={(tableRange) => select({ type: 'element', pageId: sourcePageId, elementId: element.id, tableRange })}
                     zoom={zoom}
                     showPrimaryChrome={interactive && page.id === sourcePageId}
                     onSelect={onSelect}
+                    onCellSelect={(rowId, columnId) => select({
+                      type: 'element', pageId: sourcePageId, elementId: element.id, tableCell: { rowId, columnId }
+                    })}
+                    onHeaderChange={(value) => updateTableHeader(sourcePageId, element.id, value)}
                     onAddRow={() => addTableRow(sourcePageId, element.id)}
                     onAddColumn={() => addTableColumn(sourcePageId, element.id)}
-                    onDeleteColumn={() => deleteTableColumn(sourcePageId, element.id, element.columns.at(-1) ?? '')}
-                    onDeleteRow={(rowId) => deleteTableRow(sourcePageId, element.id, rowId)}
                     onCellChange={(rowId, columnId, value) => updateTableCell(sourcePageId, element.id, rowId, columnId, value)}
                     onColumnResize={(columnId, widthMm) => resizeTableColumnBoundary(sourcePageId, element.id, columnId, widthMm)}
                     onRowResize={(rowId, heightPx) => updateTableRowHeight(sourcePageId, element.id, rowId, heightPx)}

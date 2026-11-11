@@ -143,10 +143,28 @@ export const shapeElementSchema = z.object({
   textStyle: textStyleSchema.prefault({ align: 'center' })
 });
 
+export const tableCellStyleSchema = z.object({
+  fontId: fontIdSchema,
+  fontSize: z.number().min(8).max(24),
+  textColor: colorSchema,
+  backgroundColor: colorSchema,
+  align: textAlignSchema,
+  verticalAlign: verticalAlignSchema,
+  wrapText: z.boolean(),
+  cellPadding: z.number().min(0).max(24),
+  borderColor: colorSchema,
+  borderWidth: z.number().min(0).max(6),
+  borderVisible: z.boolean(),
+  borderStyle: strokeStyleSchema,
+  bold: z.boolean(),
+  italic: z.boolean()
+}).partial();
+
 export const tableCellSchema = z.object({
   id: z.string().min(1),
   text: z.string(),
-  widthMm: z.number().positive()
+  widthMm: z.number().positive(),
+  style: tableCellStyleSchema.optional()
 });
 export const tableRowSchema = z.object({ id: z.string().min(1), cells: z.array(tableCellSchema).min(1) });
 

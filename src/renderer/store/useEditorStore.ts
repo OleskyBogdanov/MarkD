@@ -32,6 +32,8 @@ import {
   shapeStyleSchema,
   textStyleSchema
 } from '@/renderer/domain/model';
+import { tableCellStyleSchema } from '@/shared/projectSchema';
+import { selectedTableCells, type TableCellStyle, type TableRangeSelection } from '@/renderer/domain/tableSelection';
 
 const HISTORY_LIMIT = 100;
 
@@ -44,7 +46,7 @@ type HistoryGroup = { key: string; updatedAt: number };
 
 export type KpSelection =
   | { type: 'none' }
-  | { type: 'element'; elementId: string; pageId: string };
+  | { type: 'element'; elementId: string; pageId: string; tableCell?: { rowId: string; columnId: string }; tableRange?: TableRangeSelection };
 
 type ElementStackPosition = 'front' | 'back';
 
@@ -110,10 +112,13 @@ export type EditorState = {
   updateTableSettings: (pageId: string, tableId: string, settings: Partial<Pick<KpTableElement, 'showPageHeader' | 'firstRowHeader'>>) => void;
   updateTableCell: (pageId: string, tableId: string, rowId: string, columnId: string, text: string) => void;
   updateTableStyle: (pageId: string, tableId: string, style: Partial<Omit<KpTableStyle, 'columnAlign' | 'rowAlign' | 'columnVerticalAlign' | 'rowVerticalAlign' | 'rowHeights'>>) => void;
+  updateTableSelectionStyle: (pageId: string, tableId: string, style: TableCellStyle) => void;
+  updateTableSelectionRowHeight: (pageId: string, tableId: string, heightPx: number) => void;
   updateTableColumnAlign: (pageId: string, tableId: string, columnId: string, align: TextAlign | null) => void;
   updateTableRowAlign: (pageId: string, tableId: string, rowId: string, align: TextAlign | null) => void;
   updateTableColumnVerticalAlign: (pageId: string, tableId: string, columnId: string, align: VerticalAlign | null) => void;
   updateTableRowVerticalAlign: (pageId: string, tableId: string, rowId: string, align: VerticalAlign | null) => void;
+  resetTableAlignment: (pageId: string, tableId: string, target: { type: 'row' | 'column'; id: string }) => void;
   updateTableRowHeight: (pageId: string, tableId: string, rowId: string, heightPx: number) => void;
   resizeTableColumnBoundary: (pageId: string, tableId: string, columnId: string, widthMm: number) => void;
   updateTableColumnWidth: (pageId: string, tableId: string, columnId: string, widthMm: number) => void;
@@ -670,7 +675,9 @@ export const useEditorStore = create<EditorState>((set) => ({
       if (selection.type === 'none') return { selected: selection };
       const page = state.project.pages.find((candidate) => candidate.id === selection.pageId);
       const element = page?.elements.find((candidate) => candidate.id === selection.elementId);
-      return { selected: element && elementIsEditable(state, element) ? selection : { type: 'none' as const }, activePageId: page?.id ?? state.activePageId };
+      const layer = state.project.layers.find((candidate) => candidate.id === element?.layerId);
+      if (!page || !element || !layer?.visible || layer.locked) return { selected: { type: 'none' as const } };
+      return { selected: selection, activeLayerId: layer.id, activePageId: page.id };
     });
   },
 
@@ -949,6 +956,12 @@ export const useEditorStore = create<EditorState>((set) => ({
         delete table.style.rowAlign[rowId];
         delete table.style.rowVerticalAlign[rowId];
         delete table.style.rowHeights[rowId];
+        if (draft.selected.type === 'element' && draft.selected.elementId === tableId) {
+          const selection = draft.selected;
+          if (selection.tableCell?.rowId === rowId || selection.tableRange?.anchor.rowId === rowId || selection.tableRange?.focus.rowId === rowId) {
+            draft.selected = { type: 'element', pageId, elementId: tableId };
+          }
+        }
 
         if (!table.rows.length) {
           table.rows.push({
@@ -984,6 +997,12 @@ export const useEditorStore = create<EditorState>((set) => ({
         table.rows.forEach((row) => {
           row.cells.splice(columnIndex, 1);
         });
+        if (draft.selected.type === 'element' && draft.selected.elementId === tableId) {
+          const selection = draft.selected;
+          if (selection.tableCell?.columnId === columnId || selection.tableRange?.anchor.columnId === columnId || selection.tableRange?.focus.columnId === columnId) {
+            draft.selected = { type: 'element', pageId, elementId: tableId };
+          }
+        }
         return true;
       })
     );
@@ -1041,6 +1060,50 @@ export const useEditorStore = create<EditorState>((set) => ({
         return true;
       }, `table-cell:${pageId}:${tableId}:${rowId}:${columnId}`)
     );
+  },
+
+  updateTableSelectionStyle(pageId, tableId, style) {
+    const patch = tableCellStyleSchema.parse(style);
+    set((state) => applyHistory(state, (draft) => {
+      const table = findTable(draft.project.pages.find((page) => page.id === pageId), tableId);
+      if (!table || !elementIsEditable(draft, table)) return;
+      const selection = draft.selected;
+      if (selection.type !== 'element' || selection.elementId !== tableId || selection.pageId !== pageId) return;
+      let changed = false;
+      for (const cell of selectedTableCells(table, selection.tableRange, selection.tableCell)) {
+        const next = { ...cell.style, ...patch };
+        if (JSON.stringify(next) !== JSON.stringify(cell.style)) {
+          cell.style = next;
+          changed = true;
+        }
+      }
+      if (!selection.tableRange && !selection.tableCell && changed) table.style = tableStyleSchema.parse({ ...table.style, ...patch });
+      return changed;
+    }));
+  },
+
+  updateTableSelectionRowHeight(pageId, tableId, heightPx) {
+    set((state) => applyHistory(state, (draft) => {
+      const table = findTable(draft.project.pages.find((page) => page.id === pageId), tableId);
+      const selection = draft.selected;
+      if (!table || !elementIsEditable(draft, table) || selection.type !== 'element' || selection.elementId !== tableId || selection.pageId !== pageId) return;
+      const cells = new Set(selectedTableCells(table, selection.tableRange, selection.tableCell).map((cell) => cell.id));
+      const height = clamp(heightPx, 24, 96);
+      let changed = false;
+      for (const row of table.rows) {
+        if (row.cells.some((cell) => cells.has(cell.id)) && (table.style.rowHeights[row.id] ?? table.style.rowHeight) !== height) {
+          table.style.rowHeights[row.id] = height;
+          changed = true;
+        }
+      }
+      if (!selection.tableRange && !selection.tableCell && (table.style.rowHeight !== height || Object.keys(table.style.rowHeights).length > 0)) {
+        table.style.rowHeight = height;
+        table.style.rowHeights = {};
+        changed = true;
+      }
+      if (changed) table.rect.height = calculateTableElementHeightMm(table);
+      return changed;
+    }));
   },
 
   updateTableStyle(pageId, tableId, style) {
@@ -1120,6 +1183,19 @@ export const useEditorStore = create<EditorState>((set) => ({
         return true;
       })
     );
+  },
+
+  resetTableAlignment(pageId, tableId, target) {
+    set((state) => applyHistory(state, (draft) => {
+      const table = findTable(draft.project.pages.find((page) => page.id === pageId), tableId);
+      if (!table || !elementIsEditable(draft, table)) return;
+      const horizontal = target.type === 'row' ? table.style.rowAlign : table.style.columnAlign;
+      const vertical = target.type === 'row' ? table.style.rowVerticalAlign : table.style.columnVerticalAlign;
+      if (horizontal[target.id] === undefined && vertical[target.id] === undefined) return;
+      delete horizontal[target.id];
+      delete vertical[target.id];
+      return true;
+    }));
   },
 
   updateTableRowHeight(pageId, tableId, rowId, heightPx) {

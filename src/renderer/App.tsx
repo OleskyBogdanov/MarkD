@@ -16,8 +16,8 @@ const isTextEditing = (): boolean => document.activeElement instanceof HTMLEleme
   Boolean(document.activeElement.closest('input, textarea, [contenteditable="true"]'));
 
 export const App = () => {
-  const { project, selected, isDirty, undoStack, redoStack, zoom } = useEditorStore(useShallow(state => ({
-    project: state.project, selected: state.selected, isDirty: state.isDirty,
+  const { project, isDirty, undoStack, redoStack, zoom } = useEditorStore(useShallow(state => ({
+    project: state.project, isDirty: state.isDirty,
     undoStack: state.undoStack, redoStack: state.redoStack, zoom: state.zoom
   })));
   const { ready, locked, path, operation, setOperation, recovery, restore, discardRecovery, start, leave, transition, save, reportError } = useDocumentSession();
@@ -29,7 +29,6 @@ export const App = () => {
   const [inspectorWidth, setInspectorWidth] = useState(340);
   const exporting = useRef(false);
   const renderModeBeforePrint = useRef<Exclude<RenderMode, 'print'>>('edit');
-  const isPreview = renderMode === 'preview';
   const isBusy = operation.kind === 'saving' || operation.kind === 'exporting';
   const loadRecentProjects = useCallback(async (): Promise<void> => {
     setRecentProjectsLoading(true);
@@ -196,10 +195,9 @@ export const App = () => {
       onSaveFile: () => { void handleSave(); }, onSaveAs: () => { void handleSave('as'); },
       onSaveCopy: () => { void handleSave('copy'); }, onSaveTemplate: () => { void handleSave('template'); },
       onReveal: path ? () => { void window.desktop.revealProject(path).catch(reportError); } : undefined,
-      onOpen: () => handleOpen(), selected,
-      onUndo: () => executeCommand('undo'), onRedo: () => executeCommand('redo'), onDelete: () => executeCommand('delete'),
-      onZoomIn: () => state.setZoom(Math.min(2, zoom + 0.1)), onZoomOut: () => state.setZoom(Math.max(0.25, zoom - 0.1)),
-      isDirty, isBusy, onExport: () => { void handleExport(); }, isPreview, onTogglePreview: togglePreview,
-      canUndo: undoStack.length > 0, canRedo: redoStack.length > 0, zoom
-    }} /><UpdatesPanel /></div>;
+      onOpen: () => handleOpen(),
+      onUndo: () => executeCommand('undo'), onRedo: () => executeCommand('redo'),
+      isDirty, isBusy, onExport: () => { void handleExport(); }, onTogglePreview: togglePreview,
+      canUndo: undoStack.length > 0, canRedo: redoStack.length > 0
+    }} /></div>;
 };

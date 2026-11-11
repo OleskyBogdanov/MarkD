@@ -1,8 +1,9 @@
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import { useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { KpRect, KpSelectFieldElement, RenderMode } from '@/renderer/domain/model';
 import { ElementFrame } from './ElementFrame';
 import { fontFamilyForId } from '@/renderer/domain/fontRegistry';
+import { useTextOverflow } from '@/renderer/components/ui/useTextOverflow';
 import './field-element.css';
 
 type SelectFieldElementRendererProps = {
@@ -32,6 +33,8 @@ export const SelectFieldElementRenderer = ({
 }: SelectFieldElementRendererProps) => {
   const selectedOption = element.options.find((option) => option.id === element.selectedOptionId);
   const inputId = `canvas-${element.id}`;
+  const fieldRef = useRef<HTMLDivElement>(null);
+  const hasOverflow = useTextOverflow(fieldRef, mode === 'edit');
   const style = {
     '--field-font-family': fontFamilyForId(element.style.fontId),
     '--field-font-size': `${element.style.fontSize * zoom}px`,
@@ -54,12 +57,13 @@ export const SelectFieldElementRenderer = ({
       moveLabel="Переместить выпадающий список"
       resizeLabel="Изменить размер выпадающего списка"
       moveTestId="select-field-drag-handle"
+      hasOverflow={hasOverflow}
       onSelect={onSelect}
       onMoveStart={onMoveStart}
       onResizeStart={onResizeStart}
     >
-      <div className="document-field" style={style}>
-        {mode === 'edit' ? <label htmlFor={inputId}>{element.label || 'Выпадающий список'}</label> : <span className="field-label">{element.label || '\u00a0'}</span>}
+      <div ref={fieldRef} className="document-field" style={style}>
+        {mode === 'edit' ? <label data-overflow-text htmlFor={inputId}>{element.label || 'Выпадающий список'}</label> : <span className="field-label">{element.label || '\u00a0'}</span>}
         <div className="field-control select-control">
           {mode === 'edit' ? (
             <select

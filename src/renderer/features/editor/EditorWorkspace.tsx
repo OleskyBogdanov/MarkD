@@ -1,13 +1,15 @@
-import { AlertCircle, CheckCircle2, EyeOff, LoaderCircle, ZoomIn, ZoomOut } from 'lucide-react';
-import { useRef, useState } from 'react';
-import { PageNavigator } from './PageNavigator';
+import { AlertCircle, CheckCircle2, EyeOff, LoaderCircle } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { mmToPx } from '@/renderer/domain/model';
 import type { ComponentProps, CSSProperties, PointerEvent } from 'react';
 import type { KpProject, RenderMode } from '@/renderer/domain/model';
 import { InspectorResizeHandle } from '@/renderer/components/InspectorResizeHandle';
 import { Toolbar } from '@/renderer/components/Toolbar';
 import { useEditorStore } from '@/renderer/store/useEditorStore';
+import { registerPendingEdit } from '@/renderer/domain/pendingEdits';
 import { EditorSidebar } from './EditorSidebar';
+import { ElementToolbar } from './ElementToolbar';
+import { EditorStatusBar } from './EditorStatusBar';
 import { ProjectCanvas } from './ProjectCanvas';
 import './editor-workspace.css';
 
@@ -24,7 +26,7 @@ type EditorWorkspaceProps = {
   zoom: number;
   inspectorWidth: number;
   operation: OperationState;
-  toolbarProps: ComponentProps<typeof Toolbar>;
+  toolbarProps: Omit<ComponentProps<typeof Toolbar>, 'sidebarVisible' | 'onToggleStructure'>;
   onInspectorWidthChange: (width: number) => void;
   onShowProjects: () => void;
   onTogglePreview: () => void;
@@ -33,39 +35,65 @@ type EditorWorkspaceProps = {
 
 const EditorHeader = ({
   project,
-  zoom,
   toolbarProps,
-  onShowProjects
-}: Pick<EditorWorkspaceProps, 'project' | 'zoom' | 'toolbarProps' | 'onShowProjects'>) => (
-  <header className="app-header">
+  onShowProjects,
+  sidebarVisible,
+  onToggleStructure
+}: Pick<EditorWorkspaceProps, 'project' | 'toolbarProps' | 'onShowProjects'> &
+  Pick<ComponentProps<typeof Toolbar>, 'sidebarVisible' | 'onToggleStructure'>) => {
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const titleDraftRef = useRef<string | null>(null);
+  const composingTitle = useRef(false);
+  const commitTitle = useCallback((): void => {
+    const title = titleDraftRef.current;
+    if (title === null) return;
+    useEditorStore.getState().updateProjectTitle(title);
+    titleDraftRef.current = null;
+    setTitleDraft(null);
+  }, []);
+  useLayoutEffect(() => registerPendingEdit({ flush: commitTitle, isComposing: () => composingTitle.current }), [commitTitle]);
+
+  return <header className="app-header">
     <div className="brand-lockup">
       <button type="button" className="brand-mark brand-home-button" aria-label="К проектам" title="К проектам" onClick={onShowProjects}>M</button>
       <div>
         <span className="brand-name">MARKD</span>
-        <h1>{project.metadata.title}</h1>
+        <h1 title={project.metadata.title} aria-label={project.metadata.title}>
+          <input className="document-title-input" aria-label="Название документа" maxLength={120}
+            value={titleDraft ?? project.metadata.title} spellCheck={false}
+            onChange={(event) => { titleDraftRef.current = event.currentTarget.value; setTitleDraft(event.currentTarget.value); }}
+            onBlur={() => { if (!composingTitle.current) commitTitle(); }}
+            onCompositionStart={() => { composingTitle.current = true; }}
+            onCompositionEnd={(event) => {
+              composingTitle.current = false;
+              titleDraftRef.current = event.currentTarget.value;
+              setTitleDraft(event.currentTarget.value);
+              if (document.activeElement !== event.currentTarget) commitTitle();
+            }}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                titleDraftRef.current = null;
+                setTitleDraft(null);
+                event.currentTarget.blur();
+              }
+              if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); }
+            }} />
+        </h1>
       </div>
     </div>
 
-    <Toolbar {...toolbarProps} />
-
-    <div className="document-readout" aria-label={`Масштаб ${Math.round(zoom * 100)} процентов`}>
-      <strong>{Math.round(zoom * 100)}%</strong>
-      <span>A4 · {project.pages.length} стр.</span>
-    </div>
-  </header>
-);
+    <Toolbar {...toolbarProps} sidebarVisible={sidebarVisible} onToggleStructure={onToggleStructure} />
+  </header>;
+};
 
 const PreviewHeader = ({
-  zoom,
-  onTogglePreview,
-  onZoomChange
-}: Pick<EditorWorkspaceProps, 'zoom' | 'onTogglePreview' | 'onZoomChange'>) => (
+  onTogglePreview
+}: Pick<EditorWorkspaceProps, 'onTogglePreview'>) => (
   <header className="preview-header" aria-label="Панель предпросмотра">
     <span>Предпросмотр документа</span>
     <div>
-      <button type="button" aria-label="Уменьшить" title="Уменьшить" onClick={() => onZoomChange(Math.max(0.25, zoom - 0.1))} disabled={zoom <= 0.25}><ZoomOut size={16} aria-hidden="true" /></button>
-      <strong aria-label={`Масштаб ${Math.round(zoom * 100)} процентов`}>{Math.round(zoom * 100)}%</strong>
-      <button type="button" aria-label="Увеличить" title="Увеличить" onClick={() => onZoomChange(Math.min(2, zoom + 0.1))} disabled={zoom >= 2}><ZoomIn size={16} aria-hidden="true" /></button>
       <button type="button" className="exit-preview-button" aria-label="Вернуться к редактированию" title="Вернуться к редактированию" onClick={onTogglePreview}><EyeOff size={16} aria-hidden="true" /> Вернуться</button>
     </div>
   </header>
@@ -108,9 +136,29 @@ export const EditorWorkspace = ({
 }: EditorWorkspaceProps) => {
   const select = useEditorStore((state) => state.select);
   const isPreview = renderMode === 'preview';
-  const [sidebarVisible, setSidebarVisible] = useState(true);
-  const [pageError, setPageError] = useState('');
+  const [sidebarVisible, setSidebarVisible] = useState(() => window.innerWidth > 760);
+  const shellRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 760px)');
+    const onChange = (): void => setSidebarVisible(!query.matches);
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell || renderMode === 'print') return;
+    const onWheel = (event: WheelEvent): void => {
+      if (!event.ctrlKey || event.deltaY === 0) return;
+      event.preventDefault();
+      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? shell.clientHeight : 1;
+      const current = useEditorStore.getState().zoom;
+      onZoomChange(Math.max(0.25, Math.min(2, current * Math.exp(-event.deltaY * unit * 0.002))));
+    };
+    shell.addEventListener('wheel', onWheel, { passive: false });
+    return () => shell.removeEventListener('wheel', onWheel);
+  }, [onZoomChange, renderMode]);
   const fit = (whole: boolean): void => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -128,24 +176,18 @@ export const EditorWorkspace = ({
 
   return (
     <div
+      ref={shellRef}
       className={`app-shell mode-${renderMode} ${isPreview ? 'preview-mode' : ''} ${!sidebarVisible ? 'sidebar-hidden' : ''}`}
       style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}
     >
       {renderMode === 'edit' ? (
-        <EditorHeader project={project} zoom={zoom} toolbarProps={toolbarProps} onShowProjects={onShowProjects} />
+        <EditorHeader project={project} toolbarProps={toolbarProps} onShowProjects={onShowProjects}
+          sidebarVisible={sidebarVisible} onToggleStructure={() => setSidebarVisible(value => !value)} />
       ) : renderMode === 'preview' ? (
-        <PreviewHeader zoom={zoom} onTogglePreview={onTogglePreview} onZoomChange={onZoomChange} />
+        <PreviewHeader onTogglePreview={onTogglePreview} />
       ) : null}
 
-      {renderMode !== 'print' ? <div className="workspace-controls">
-        {renderMode === 'edit' ? <PageNavigator onError={setPageError} /> : null}
-        <div className="view-controls">
-          <button type="button" onClick={() => fit(false)}>По ширине</button>
-          <button type="button" onClick={() => fit(true)}>Вся страница</button>
-          {renderMode === 'edit' ? <button type="button" aria-pressed={sidebarVisible} onClick={() => setSidebarVisible(value => !value)}>Свойства</button> : null}
-        </div>
-        {pageError ? <span role="alert">{pageError}</span> : null}
-      </div> : null}
+      {renderMode === 'edit' ? <ElementToolbar /> : null}
       <main className="app-main">
         <section
           ref={canvasRef}
@@ -162,7 +204,7 @@ export const EditorWorkspace = ({
           </>
         ) : null}
       </main>
-
+      {renderMode !== 'print' ? <EditorStatusBar zoom={zoom} isPreview={isPreview} onZoomChange={onZoomChange} onFit={fit} /> : null}
       {renderMode !== 'print' ? <OperationToast operation={operation} /> : null}
     </div>
   );

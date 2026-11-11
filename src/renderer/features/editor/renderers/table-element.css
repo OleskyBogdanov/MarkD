@@ -5,27 +5,29 @@
 .document-table td { height: var(--table-row-height, calc(34px * var(--canvas-zoom, 1))); min-width: 0; overflow: hidden; border-width: var(--table-border-width, calc(1px * var(--canvas-zoom, 1))); border-style: var(--table-border-style, solid); border-color: #d7d7cf; padding: 0; vertical-align: middle; }
 .document-table textarea,
 .document-table .table-cell-content > span { width: 100%; min-width: 0; display: block; overflow: hidden; border: 0; border-radius: 0; padding: var(--table-cell-padding, calc(7px * var(--canvas-zoom, 1))); color: inherit; background: transparent; font: inherit; font-size: var(--table-font-size, calc(11px * var(--canvas-zoom, 1))); line-height: 1.2; overflow-wrap: anywhere; word-break: break-word; white-space: pre-wrap; resize: none; }
-.table-cell-content { width: 100%; height: var(--table-row-height, calc(34px * var(--canvas-zoom, 1))); min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.table-cell-content { position: relative; z-index: 1; width: 100%; height: var(--table-row-height, calc(34px * var(--canvas-zoom, 1))); min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .document-table textarea { max-height: 100%; min-height: calc(1.2em + 2 * var(--table-cell-padding, calc(7px * var(--canvas-zoom, 1)))); }
 .document-table .table-cell-content > span { height: auto; flex: 0 0 auto; }
 .document-table textarea:focus { outline: calc(1px * var(--canvas-zoom, 1)) solid var(--accent); outline-offset: calc(-1px * var(--canvas-zoom, 1)); background: var(--accent-soft); }
-.table-chrome-actions { position: absolute; top: -36px; right: 0; display: flex; gap: 4px; pointer-events: auto; }
-.table-chrome-actions button,
-.table-row-actions button { width: 30px; height: 30px; min-height: 30px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(57, 62, 53, 0.2); border-radius: 7px; padding: 0; color: #4c5048; background: rgba(255, 254, 250, 0.98); box-shadow: 0 2px 8px rgba(35, 36, 31, 0.14); }
-.table-chrome-actions svg,
-.table-row-actions svg { width: 14px; height: 14px; }
+.document-table-header input { width: 100%; min-width: 0; min-height: 0; height: 100%; border: 0; border-radius: 0; padding: 0; color: inherit; background: transparent; font: inherit; letter-spacing: inherit; text-transform: inherit; }
+.document-table-header input:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.table-chrome-actions { position: absolute; top: -40px; right: 0; display: flex; gap: 4px; pointer-events: auto; }
+.table-chrome-actions button { width: 30px; height: 30px; min-height: 30px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(57, 62, 53, 0.2); border-radius: 7px; padding: 0; color: #4c5048; background: rgba(255, 254, 250, 0.98); box-shadow: 0 2px 8px rgba(35, 36, 31, 0.14); }
+@media (hover: hover) {
+  .table-chrome-actions button:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+}
+.table-chrome-actions button:active { border-color: var(--accent); color: var(--paper); background: var(--accent); }
+.table-chrome-actions svg { width: 14px; height: 14px; }
 .table-chrome-actions button svg + svg { width: 9px; margin-left: -6px; }
-.table-row-actions { position: absolute; inset: 0; pointer-events: none; }
-.table-row-actions button { position: absolute; right: -34px; pointer-events: auto; color: var(--danger); }
-.table-resize-guides { position: absolute; inset: 0; pointer-events: none; }
+.table-resize-guides { --table-resize-hit-size: min(14px, calc(14px * var(--canvas-zoom, 1))); position: absolute; inset: 0; pointer-events: none; }
 .table-column-resize-handle,
 .table-row-resize-handle { position: absolute; z-index: 44; border: 0; outline: 0; touch-action: none; }
-.table-column-resize-handle { bottom: 0; width: 14px; margin-left: -7px; cursor: col-resize; }
-.table-row-resize-handle { right: 0; left: 0; height: 14px; margin-top: -7px; cursor: row-resize; }
+.table-column-resize-handle { bottom: 0; width: var(--table-resize-hit-size); margin-left: calc(var(--table-resize-hit-size) / -2); cursor: col-resize; }
+.table-row-resize-handle { right: 0; left: 0; height: var(--table-resize-hit-size); margin-top: calc(var(--table-resize-hit-size) / -2); cursor: row-resize; }
 .table-column-resize-handle::after,
 .table-row-resize-handle::after { position: absolute; content: ''; background: transparent; transition: background-color 120ms ease, box-shadow 120ms ease; }
-.table-column-resize-handle::after { top: 0; bottom: 0; left: 6px; width: 2px; }
-.table-row-resize-handle::after { top: 6px; right: 0; left: 0; height: 2px; }
+.table-column-resize-handle::after { top: 0; bottom: 0; left: 50%; width: 2px; transform: translateX(-50%); }
+.table-row-resize-handle::after { top: 50%; right: 0; left: 0; height: 2px; transform: translateY(-50%); }
 .table-column-resize-handle:hover::after,
 .table-column-resize-handle:focus-visible::after,
 .table-column-resize-handle:active::after,
@@ -34,3 +36,14 @@
 .table-row-resize-handle:active::after { background: var(--accent); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.78); }
 .table-column-resize-handle:focus-visible,
 .table-row-resize-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.table-selection-gutters { position: absolute; inset: 0; pointer-events: none; }
+.table-selection-gutters button { position: absolute; min-height: 0; border: 0; border-radius: 0; padding: 0; color: var(--accent); background: transparent; pointer-events: auto; touch-action: none; }
+.table-select-columns { height: 10px; cursor: s-resize; }
+.table-selection-gutters .table-select-rows { left: -12px; width: 12px; cursor: e-resize; }
+.document-table th, .document-table td { position: relative; }
+.table-select-cells { position: absolute; top: 0; left: min(8px, calc(8px * var(--canvas-zoom, 1))); z-index: 2; width: min(7px, calc(7px * var(--canvas-zoom, 1))); height: 100%; min-height: 0; border: 0; border-radius: 0; padding: 0; background: transparent; touch-action: none; cursor: e-resize; }
+.table-selection-gutters button:focus-visible, .table-select-cells:focus-visible { background: var(--accent-soft); }
+.document-table textarea[readonly] { cursor: default; user-select: none; touch-action: none; }
+.table-element [data-cell-selected] { outline: 2px solid var(--accent); outline-offset: -2px; }
+.table-element [data-cell-selected]::after { position: absolute; inset: 0; content: ''; background: var(--accent-soft); pointer-events: none; }
+.table-selection-gutters button:focus-visible, .table-select-cells:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

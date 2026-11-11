@@ -10,11 +10,10 @@ type InspectorSectionProps = {
 
 export const InspectorSection = ({
   children,
-  defaultOpen = false,
   summary,
   title
 }: InspectorSectionProps) => {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [isOpen, setIsOpen] = useState(false);
   const contentId = useId();
 
   return (
@@ -26,7 +25,7 @@ export const InspectorSection = ({
           aria-label={title}
           aria-controls={contentId}
           aria-expanded={isOpen}
-          onClick={() => setIsOpen((open) => !open)}
+          popoverTarget={contentId}
         >
           <span>{title}</span>
           <span className="inspector-section-meta">
@@ -35,7 +34,13 @@ export const InspectorSection = ({
           </span>
         </button>
       </h4>
-      <div className="inspector-section-content" id={contentId} hidden={!isOpen}>
+      <div
+        className="inspector-section-content"
+        id={contentId}
+        popover="auto"
+        onToggle={(event) => setIsOpen(event.newState === 'open')}
+      >
+        <h4 className="inspector-popover-title">{title}</h4>
         {children}
       </div>
     </section>

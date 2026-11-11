@@ -1,0 +1,5 @@
+.element-toolbar .table-inspector-panel,
+.table-inspector-panel .table-alignment-tools { flex-wrap: nowrap; }
+.table-inspector-panel > button,
+.table-inspector-panel > .text-format-controls,
+.table-inspector-panel > .table-alignment-tools { flex: 0 0 auto; white-space: nowrap; }

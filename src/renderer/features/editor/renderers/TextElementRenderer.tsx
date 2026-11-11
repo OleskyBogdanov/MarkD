@@ -1,8 +1,9 @@
-import { useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import type { KpRect, KpTextElement, RenderMode } from '@/renderer/domain/model';
 import { ElementFrame } from './ElementFrame';
 import { BufferedTextarea } from '@/renderer/components/ui/BufferedTextControl';
 import { fontFamilyForId } from '@/renderer/domain/fontRegistry';
+import { useTextOverflow } from '@/renderer/components/ui/useTextOverflow';
 import './text-element.css';
 
 type TextElementRendererProps = {
@@ -31,16 +32,7 @@ export const TextElementRenderer = ({
   onResizeStart
 }: TextElementRendererProps) => {
   const contentRef = useRef<HTMLTextAreaElement | HTMLDivElement>(null);
-  const [hasOverflow, setHasOverflow] = useState(false);
-
-  useLayoutEffect(() => {
-    if (mode !== 'edit' || !contentRef.current) {
-      setHasOverflow(false);
-      return;
-    }
-    const node = contentRef.current;
-    setHasOverflow(node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1);
-  }, [element.text, element.style, mode, rect.height, rect.width, zoom]);
+  const hasOverflow = useTextOverflow(contentRef, mode === 'edit');
 
   const contentStyle = {
     fontFamily: fontFamilyForId(element.style.fontId),

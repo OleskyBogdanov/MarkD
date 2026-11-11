@@ -1,0 +1,40 @@
+.action-menu { position: relative; flex: 0 0 auto; }
+.action-menu-trigger[aria-expanded='true'] { background: var(--accent-soft); }
+.action-menu-popover {
+  position: absolute;
+  z-index: 80;
+  inset-block-start: calc(100% + 8px);
+  inset-inline-start: 0;
+  width: 236px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 120px);
+  display: grid;
+  gap: 2px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffefa;
+  box-shadow: 0 12px 28px rgba(35, 36, 31, 0.16);
+  scrollbar-width: thin;
+}
+.action-menu-above .action-menu-popover { inset-block-start: auto; inset-block-end: calc(100% + 8px); }
+.action-menu-popover > button {
+  width: 100%;
+  min-height: 36px;
+  justify-content: flex-start;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--ink);
+  background: transparent;
+  text-align: start;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.action-menu-popover > button:hover,
+.action-menu-popover > button:focus-visible { background: var(--accent-soft); }
+.action-menu-popover > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.action-menu-popover > button:disabled { opacity: .4; cursor: default; }
+.action-menu-popover > .action-menu-destructive { color: #8e3f35; }

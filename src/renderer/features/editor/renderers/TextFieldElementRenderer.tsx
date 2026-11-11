@@ -1,10 +1,11 @@
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
+import { useRef, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import type { KpRect, KpTextFieldElement, RenderMode } from '@/renderer/domain/model';
 import { DOCUMENT_ICON_REGISTRY } from '@/renderer/domain/iconRegistry';
 import { ElementFrame } from './ElementFrame';
 import { BufferedTextarea } from '@/renderer/components/ui/BufferedTextControl';
 import { useAutoSizeTextarea } from '@/renderer/components/ui/useAutoSizeTextarea';
 import { fontFamilyForId } from '@/renderer/domain/fontRegistry';
+import { useTextOverflow } from '@/renderer/components/ui/useTextOverflow';
 import './field-element.css';
 
 const verticalContentAlign = {
@@ -41,6 +42,8 @@ export const TextFieldElementRenderer = ({
   const Icon = element.iconName ? DOCUMENT_ICON_REGISTRY[element.iconName] : null;
   const inputId = `canvas-${element.id}`;
   const autoSize = useAutoSizeTextarea();
+  const fieldRef = useRef<HTMLDivElement>(null);
+  const hasOverflow = useTextOverflow(fieldRef, mode === 'edit');
   const style = {
     '--field-font-family': fontFamilyForId(element.style.fontId),
     '--field-font-size': `${element.style.fontSize * zoom}px`,
@@ -69,14 +72,15 @@ export const TextFieldElementRenderer = ({
       moveLabel="Переместить текстовое поле"
       resizeLabel="Изменить размер текстового поля"
       moveTestId="text-field-drag-handle"
+      hasOverflow={hasOverflow}
       onSelect={onSelect}
       onMoveStart={onMoveStart}
       onResizeStart={onResizeStart}
     >
-      <div className={`document-field ${element.showLabel ? '' : 'without-label'}`} style={style}>
+      <div ref={fieldRef} className={`document-field ${element.showLabel ? '' : 'without-label'}`} style={style}>
         {element.showLabel
           ? mode === 'edit'
-            ? <label htmlFor={inputId}>{element.label || 'Текстовое поле'}</label>
+            ? <label data-overflow-text htmlFor={inputId}>{element.label || 'Текстовое поле'}</label>
             : <span className="field-label">{element.label || '\u00a0'}</span>
           : null}
         <div className="field-control">
