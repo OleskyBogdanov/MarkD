@@ -15,6 +15,7 @@ import {
 } from '@/renderer/domain/model';
 import { resolveTableRowHeight } from '@/renderer/domain/tableStyle';
 import { useEditorStore } from '@/renderer/store/useEditorStore';
+import { insertImageWithAsset } from '@/renderer/store/historyTransaction';
 import { ImageElementRenderer } from './renderers/ImageElementRenderer';
 import { SelectFieldElementRenderer } from './renderers/SelectFieldElementRenderer';
 import { ShapeElementRenderer } from './renderers/ShapeElementRenderer';
@@ -186,9 +187,7 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
     updateTableHeader,
     updateTableCell,
     resizeTableColumnBoundary,
-    updateTableRowHeight,
-    addAsset,
-    addImage
+    updateTableRowHeight
   } = useEditorStore(useShallow((state) => ({
     selected: state.selected,
     select: state.select,
@@ -202,9 +201,7 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
     updateTableHeader: state.updateTableHeader,
     updateTableCell: state.updateTableCell,
     resizeTableColumnBoundary: state.resizeTableColumnBoundary,
-    updateTableRowHeight: state.updateTableRowHeight,
-    addAsset: state.addAsset,
-    addImage: state.addImage
+    updateTableRowHeight: state.updateTableRowHeight
   })));
   const pageRefs = useRef(new Map<string, HTMLDivElement>());
   const dragRef = useRef<ActiveInteraction | null>(null);
@@ -342,8 +339,11 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
     try {
       for (const [index, file] of files.entries()) {
         const assetId = `asset_${globalThis.crypto.randomUUID()}`;
-        addAsset({ id: assetId, name: file.name || `Изображение ${index + 1}`, mimeType: file.type, dataUrl: await readFileAsDataUrl(file) });
-        addImage(page.sourcePageId, assetId, { x: center.x + index * 6, y: center.y + index * 6 });
+        insertImageWithAsset({
+          pageId: page.sourcePageId,
+          asset: { id: assetId, name: file.name || `Изображение ${index + 1}`, mimeType: file.type, dataUrl: await readFileAsDataUrl(file) },
+          center: { x: center.x + index * 6, y: center.y + index * 6 }
+        });
       }
       setDropMessage(files.length === 1 ? 'Изображение добавлено.' : `Добавлено изображений: ${files.length}.`);
     } catch {

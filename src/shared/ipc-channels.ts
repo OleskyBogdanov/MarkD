@@ -1,3 +1,5 @@
+import type { ExcelCatalog } from './excelCatalog.js';
+
 export const IPC_CHANNEL = {
   OPEN_PROJECT: 'project:open',
   OPEN_RECENT_PROJECT: 'project:openRecent',
@@ -5,6 +7,7 @@ export const IPC_CHANNEL = {
   SAVE_PROJECT_AS: 'project:saveAs',
   SAVE_TEMPLATE: 'project:saveTemplate',
   IMPORT_IMAGE: 'file:importImage',
+  IMPORT_EXCEL: 'file:importExcel',
   EXPORT_PDF: 'project:exportPdf',
   NEW_DOC: 'project:new',
   GET_RECENT: 'project:recent',
@@ -63,6 +66,7 @@ export interface DesktopApi {
   saveProjectAs: (snapshot: string) => Promise<string | null>;
   saveTemplate: (snapshot: string) => Promise<string | null>;
   importImage: () => Promise<ImportImageResult | null>;
+  importExcel: () => Promise<ExcelCatalog | null>;
   exportPdf: (snapshot: string) => Promise<string | null>;
   getRecentProjects: () => Promise<RecentProjectSummary[]>;
   setDirtyState: (dirty: boolean) => void;

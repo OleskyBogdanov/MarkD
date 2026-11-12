@@ -34,14 +34,13 @@ import {
 } from '@/renderer/domain/model';
 import { tableCellStyleSchema } from '@/shared/projectSchema';
 import { selectedTableCells, type TableCellStyle, type TableRangeSelection } from '@/renderer/domain/tableSelection';
-
-const HISTORY_LIMIT = 100;
+import { appendExcelTableRows, type ExcelTableInsertion } from './excelTableInsertion';
+import { applyHistory, createHistoryActions, preferredActiveLayer } from './editorHistory';
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const clampMm = (value: number, min: number, max: number): number => clamp(value, min, max);
 const clampText = (text: string): string => text.slice(0, 20_000).replace(/\r/g, '');
 
-type MutationResult = boolean | void;
 type HistoryGroup = { key: string; updatedAt: number };
 
 export type KpSelection =
@@ -80,6 +79,10 @@ export type EditorState = {
   zoom: number;
   activeLayerId: string;
   historyGroup: HistoryGroup | null;
+  historyTransaction: { readonly changed: boolean } | null;
+  beginHistoryTransaction: () => void;
+  endHistoryTransaction: () => void;
+  endHistoryGroup: () => void;
 
   setProject: (project: KpProject) => void;
   resetProject: (kind?: 'proposal' | 'blank') => void;
@@ -105,6 +108,7 @@ export type EditorState = {
   deleteSelectOption: (pageId: string, elementId: string, optionId: string) => void;
   updateProjectTitle: (title: string) => void;
   addTableRow: (pageId: string, tableId: string) => void;
+  insertExcelRows: (insertion: ExcelTableInsertion) => void;
   addTableColumn: (pageId: string, tableId: string) => void;
   deleteTableRow: (pageId: string, tableId: string, rowId: string) => void;
   deleteTableColumn: (pageId: string, tableId: string, columnId: string) => void;
@@ -370,9 +374,6 @@ const tableRowHeights = (table: KpTableElement): number[] =>
 const calculateTableElementHeightMm = (table: KpTableElement): number =>
   calculateTableRowsHeightMm(tableRowHeights(table), table.showPageHeader);
 
-const preferredActiveLayer = (layers: KpLayer[]): string =>
-  layers.find((layer) => layer.visible && !layer.locked)?.id ?? layers[0]?.id ?? DEFAULT_LAYER_ID;
-
 const normalizeRect = (rect: KpRect, bounds: KpPage, canFillPage = false): KpRect => {
   const maxWidth = canFillPage
     ? bounds.widthMm
@@ -389,58 +390,6 @@ const normalizeRect = (rect: KpRect, bounds: KpPage, canFillPage = false): KpRec
   };
 };
 
-const cloneProjectForMutation = (project: KpProject): KpProject => ({
-  ...project,
-  metadata: { ...project.metadata },
-  layers: project.layers.map((layer) => ({ ...layer })),
-  pages: project.pages.map((page) => ({
-    ...page,
-    background: page.background ? { ...page.background } : null,
-    elements: page.elements.map((element) => clone(element))
-  })),
-  assets: [...project.assets],
-  styles: { ...project.styles }
-});
-
-const applyHistory = (
-  state: EditorState,
-  mutate: (draft: EditorState) => MutationResult,
-  historyGroupKey?: string
-): EditorState => {
-  const now = Date.now();
-  const draft: EditorState = {
-    ...state,
-    project: cloneProjectForMutation(state.project),
-    selected: { ...state.selected },
-    undoStack: state.undoStack,
-    redoStack: state.redoStack
-  };
-  const changed = mutate(draft);
-
-  if (!changed) {
-    return state;
-  }
-
-  if (!historyGroupKey) draft.project = projectSchema.parse(draft.project);
-
-  const joinsPreviousHistory = Boolean(
-    historyGroupKey &&
-    state.historyGroup?.key === historyGroupKey &&
-    now - state.historyGroup.updatedAt < 1_000
-  );
-
-  return {
-    ...draft,
-    undoStack: joinsPreviousHistory
-      ? state.undoStack
-      : [...state.undoStack, state.project].slice(-HISTORY_LIMIT),
-    redoStack: [],
-    isDirty: true,
-    revision: state.revision + 1,
-    historyGroup: historyGroupKey ? { key: historyGroupKey, updatedAt: now } : null
-  };
-};
-
 export const useEditorStore = create<EditorState>((set) => ({
   project: makeDefaultProject(),
   selected: { type: 'none' },
@@ -454,6 +403,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   zoom: 1,
   activeLayerId: DEFAULT_LAYER_ID,
   historyGroup: null,
+  historyTransaction: null,
+  ...createHistoryActions(set),
 
   setProject(project) {
     const parsed = projectSchema.parse(project);
@@ -465,7 +416,8 @@ export const useEditorStore = create<EditorState>((set) => ({
       undoStack: [],
       redoStack: [],
       activeLayerId: preferredActiveLayer(parsed.layers),
-      historyGroup: null
+      historyGroup: null,
+      historyTransaction: null
     }));
   },
 
@@ -480,7 +432,8 @@ export const useEditorStore = create<EditorState>((set) => ({
       undoStack: [],
       redoStack: [],
       activeLayerId: preferredActiveLayer(project.layers),
-      historyGroup: null
+      historyGroup: null,
+      historyTransaction: null
     }));
   },
 
@@ -672,12 +625,12 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   select(selection) {
     set((state) => {
-      if (selection.type === 'none') return { selected: selection };
+      if (selection.type === 'none') return { selected: selection, historyGroup: null };
       const page = state.project.pages.find((candidate) => candidate.id === selection.pageId);
       const element = page?.elements.find((candidate) => candidate.id === selection.elementId);
       const layer = state.project.layers.find((candidate) => candidate.id === element?.layerId);
       if (!page || !element || !layer?.visible || layer.locked) return { selected: { type: 'none' as const } };
-      return { selected: selection, activeLayerId: layer.id, activePageId: page.id };
+      return { selected: selection, activeLayerId: layer.id, activePageId: page.id, historyGroup: null };
     });
   },
 
@@ -765,11 +718,9 @@ export const useEditorStore = create<EditorState>((set) => ({
         element.text = nextText;
         element.textStyle = nextTextStyle;
         return true;
-      }, patch.text !== undefined
+      }, patch.text !== undefined && Object.keys(patch).length === 1
         ? `shape-text:${pageId}:${elementId}`
-        : patch.textStyle
-          ? `shape-text-style:${pageId}:${elementId}:${Object.keys(patch.textStyle).sort().join(',')}`
-          : undefined)
+        : undefined)
     );
   },
 
@@ -789,7 +740,7 @@ export const useEditorStore = create<EditorState>((set) => ({
 
         element.style = nextStyle;
         return true;
-      }, `text-style:${pageId}:${elementId}:${Object.keys(style).sort().join(',')}`)
+      })
     );
   },
 
@@ -811,7 +762,8 @@ export const useEditorStore = create<EditorState>((set) => ({
         if (JSON.stringify(next) === JSON.stringify(element)) return;
         Object.assign(element, next);
         return true;
-      }, `text-field:${pageId}:${elementId}:${Object.keys(patch).sort().join(',')}`)
+      }, Object.keys(patch).length === 1 && (patch.value !== undefined || patch.label !== undefined || patch.placeholder !== undefined)
+        ? `text-field:${pageId}:${elementId}:${Object.keys(patch)[0]}` : undefined)
     );
   },
 
@@ -839,7 +791,8 @@ export const useEditorStore = create<EditorState>((set) => ({
         if (JSON.stringify(next) === JSON.stringify(element)) return;
         Object.assign(element, next);
         return true;
-      }, `select-field:${pageId}:${elementId}:${Object.keys(patch).sort().join(',')}`)
+      }, Object.keys(patch).length === 1 && (patch.label !== undefined || patch.placeholder !== undefined)
+        ? `select-field:${pageId}:${elementId}:${Object.keys(patch)[0]}` : undefined)
     );
   },
 
@@ -898,6 +851,18 @@ export const useEditorStore = create<EditorState>((set) => ({
         return true;
       }, 'project-title')
     );
+  },
+
+  insertExcelRows({ sessionId, pageId, tableId, mapping, rows }) {
+    set((state) => applyHistory(state, (draft) => {
+      if (draft.sessionId !== sessionId) throw new Error('Документ изменился. Откройте заполнение таблицы заново');
+      const table = findTable(draft.project.pages.find((page) => page.id === pageId), tableId);
+      if (!table) throw new Error('Таблица удалена или больше не существует');
+      if (!elementIsEditable(draft, table)) throw new Error('Слой таблицы скрыт, заблокирован или не активен');
+      appendExcelTableRows(table, mapping, rows);
+      table.rect.height = calculateTableElementHeightMm(table);
+      return true;
+    }));
   },
 
   addTableRow(pageId, tableId) {
@@ -1121,7 +1086,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         table.style = next;
         table.rect.height = calculateTableElementHeightMm(table);
         return true;
-      }, `table-style:${pageId}:${tableId}:${Object.keys(style).sort().join(',')}`)
+      })
     );
   },
 
@@ -1210,7 +1175,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         table.style.rowHeights[rowId] = nextHeight;
         table.rect.height = calculateTableElementHeightMm(table);
         return true;
-      }, `table-row-height:${pageId}:${tableId}:${rowId}`)
+      })
     );
   },
 
@@ -1233,7 +1198,7 @@ export const useEditorStore = create<EditorState>((set) => ({
           if (row.cells[columnIndex + 1]) row.cells[columnIndex + 1].widthMm = nextRightWidth;
         });
         return true;
-      }, `table-column-resize:${pageId}:${tableId}:${columnId}`)
+      })
     );
   },
 
@@ -1391,7 +1356,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     set((state) => {
       const layer = state.project.layers.find((candidate) => candidate.id === layerId);
       if (!layer || !layer.visible || layer.locked || state.activeLayerId === layerId) return state;
-      return { activeLayerId: layerId, selected: { type: 'none' as const } };
+      return { activeLayerId: layerId, selected: { type: 'none' as const }, historyGroup: null };
     });
   },
 
@@ -1438,8 +1403,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     set((state) =>
       applyHistory(state, (draft) => {
         const page = draft.project.pages.find((item) => item.id === pageId);
-        if (!page) return;
-
+        if (!page || JSON.stringify(page.background) === JSON.stringify(background)) return;
         page.background = background;
         return true;
       })
@@ -1504,58 +1468,6 @@ export const useEditorStore = create<EditorState>((set) => ({
     set({ zoom: clampMm(zoom, 0.25, 2) });
   },
 
-  undo() {
-    set((state) => {
-      if (!state.undoStack.length) {
-        return state;
-      }
-
-      const previousProject = state.undoStack[state.undoStack.length - 1];
-      const nextRedo = [...state.redoStack, state.project].slice(-HISTORY_LIMIT);
-
-      return {
-        ...state,
-        project: previousProject,
-        undoStack: state.undoStack.slice(0, -1),
-        redoStack: nextRedo,
-        selected: { type: 'none' },
-        activeLayerId: previousProject.layers.some((layer) => layer.id === state.activeLayerId && layer.visible && !layer.locked)
-          ? state.activeLayerId
-          : preferredActiveLayer(previousProject.layers),
-        isDirty: true,
-        revision: state.revision + 1,
-        activePageId: previousProject.pages.some(page => page.id === state.activePageId) ? state.activePageId : previousProject.pages[0]?.id ?? null,
-        historyGroup: null
-      };
-    });
-  },
-
-  redo() {
-    set((state) => {
-      if (!state.redoStack.length) {
-        return state;
-      }
-
-      const next = state.redoStack[state.redoStack.length - 1];
-      const nextUndo = [...state.undoStack, state.project].slice(-HISTORY_LIMIT);
-
-      return {
-        ...state,
-        project: next,
-        redoStack: state.redoStack.slice(0, -1),
-        undoStack: nextUndo,
-        selected: { type: 'none' },
-        activeLayerId: next.layers.some((layer) => layer.id === state.activeLayerId && layer.visible && !layer.locked)
-          ? state.activeLayerId
-          : preferredActiveLayer(next.layers),
-        isDirty: true,
-        revision: state.revision + 1,
-        activePageId: next.pages.some(page => page.id === state.activePageId) ? state.activePageId : next.pages[0]?.id ?? null,
-        historyGroup: null
-      };
-    });
-  },
-
   markSaved(sessionId, revision) {
     set(state => state.sessionId === sessionId
       ? { savedRevision: revision, isDirty: state.revision !== revision, historyGroup: null }
@@ -1563,7 +1475,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   },
 
   setActivePage(pageId) {
-    set(state => state.project.pages.some(page => page.id === pageId) ? { activePageId: pageId } : state);
+    set(state => state.activePageId !== pageId && state.project.pages.some(page => page.id === pageId)
+      ? { activePageId: pageId, historyGroup: null } : state);
   },
 
   deletePage(pageId) {

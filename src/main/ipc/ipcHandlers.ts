@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { IPC_CHANNEL, type RecentProjectSummary, type SaveProjectArgs } from '../../shared/ipc-channels.js';
 import { projectSchema } from '../../shared/projectSchema.js';
 import { assertRendererOrigin, registerIpcChannel } from './ipcRegistry.js';
+import { registerExcelImportIpc } from './excelImportIpc.js';
 import { defaultPdfPath, defaultProjectPath, defaultTemplatePath, ensureMarkdDirectories } from '../storage/markdPaths.js';
 import { readRecovery, writeRecovery, clearRecovery } from '../storage/recoveryService.js';
 import { writeLog } from '../logging/appLogger.js';
@@ -189,6 +190,7 @@ export const openProjectFromPath = (filePath: string): { path: string; snapshot:
 };
 
 export const registerIpcHandlers = (): void => {
+  registerExcelImportIpc();
   ipcMain.handle(IPC_CHANNEL.CONFIRM_SAVE, async event => {
     const window = withMainWindowFromEvent(event);
     const result = await dialog.showMessageBox(window, {

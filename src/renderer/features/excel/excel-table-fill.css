@@ -1,0 +1,112 @@
+.excel-fill-dialog {
+  width: min(1600px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.excel-fill-dialog::backdrop { background: rgb(35 36 31 / 38%); }
+.excel-fill-dialog::selection,
+.excel-fill-dialog ::selection { color: var(--paper); background: var(--accent); }
+.excel-fill-dialog input { caret-color: var(--accent-dark); }
+.excel-fill-body,
+.excel-catalog-scroll,
+.excel-preview-scroll {
+  --scrollbar-thumb: var(--muted);
+  --scrollbar-thumb-hover: var(--accent);
+  --scrollbar-thumb-active: var(--accent-dark);
+}
+.excel-fill-form { display: flex; flex-direction: column; max-height: calc(100dvh - 34px); }
+.excel-fill-header { padding: 20px 24px 16px; border-bottom: 1px solid var(--line); }
+.excel-fill-header h2 { margin: 0; font-size: 24px; font-weight: 700; }
+.excel-fill-header p { margin: 8px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+.excel-fill-body { min-height: 0; padding: 20px 24px; overflow-y: auto; overscroll-behavior: contain; }
+.excel-fill-body section + section { margin-top: 24px; }
+.excel-fill-body table { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 1.45; }
+.excel-fill-body th { background: var(--shell); font-size: 12px; font-weight: 700; text-align: left; }
+.excel-fill-body th,
+.excel-fill-body td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.excel-catalog-scroll,
+.excel-preview-scroll { overflow-x: auto; overscroll-behavior-x: contain; border: 1px solid var(--line); border-radius: var(--control-radius); }
+.excel-catalog-scroll { max-height: min(52dvh, 520px); overflow: auto; overscroll-behavior: contain; }
+.excel-fill-body .excel-catalog-table { width: max-content; min-width: 100%; }
+.excel-catalog-table th,
+.excel-catalog-table td { min-width: 120px; max-width: 180px; overflow-wrap: anywhere; }
+.excel-catalog-table td { background: var(--paper); }
+.excel-catalog-table thead th { position: sticky; top: 0; z-index: 2; vertical-align: bottom; }
+.excel-catalog-table th:first-child,
+.excel-catalog-table td:first-child { position: sticky; left: 0; z-index: 3; min-width: 140px; box-shadow: 1px 0 var(--line); }
+.excel-catalog-table th:last-child,
+.excel-catalog-table td:last-child { position: sticky; right: 0; z-index: 3; box-shadow: -1px 0 var(--line); }
+.excel-catalog-table thead th:first-child,
+.excel-catalog-table thead th:last-child { z-index: 4; }
+.excel-catalog-table tr[data-selected='true'] td { background: var(--accent-soft); }
+.excel-product-engine { display: block; margin-top: 5px; font-size: 12px; }
+.excel-fill-dialog select,
+.excel-fill-dialog input[type='text'],
+.excel-fill-dialog input[type='number'] {
+  min-height: 36px;
+  max-width: 100%;
+  border: 1px solid var(--muted);
+  border-radius: var(--control-radius);
+  padding: 6px 8px;
+  color: var(--ink);
+  background: var(--paper);
+  font-size: 14px;
+}
+.excel-fill-dialog select:disabled,
+.excel-fill-dialog input:disabled { opacity: 0.65; }
+.excel-field { min-width: 0; display: grid; gap: 8px; font-size: 13px; font-weight: 650; }
+.excel-field > select { width: 100%; min-width: 0; }
+.excel-destination > .excel-field { max-width: 620px; }
+.excel-column-mapping { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+.excel-column-setting { min-width: 0; display: grid; align-content: start; gap: 12px; }
+.excel-column-setting input { width: 100%; min-width: 0; }
+.excel-number { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.excel-quantity { width: 80px; }
+.excel-avr-choice { display: flex; align-items: center; gap: 6px; min-height: 36px; white-space: nowrap; }
+.excel-avr-choice input { width: 18px; height: 18px; accent-color: var(--accent); }
+.excel-select-product { min-width: 108px; min-height: 36px; }
+.excel-select-product[aria-pressed='true'] { color: var(--accent-dark); }
+.excel-fill-note { margin: 12px 0 0; font-size: 13px; line-height: 1.5; }
+.excel-field-error { display: block; margin: 8px 0 0; color: var(--danger); font-size: 13px; line-height: 1.5; }
+.excel-field-error:empty { margin: 0; }
+.excel-fill-preview h3 { margin: 0; font-size: 18px; }
+.excel-preview-scroll { margin-top: 12px; }
+.excel-preview-scroll table { min-width: 700px; }
+.excel-preview-name { min-width: 200px; overflow-wrap: anywhere; }
+.excel-preview-value { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.excel-fill-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 24px;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+  font-size: 13px;
+}
+.excel-fill-footer > div { display: flex; gap: 8px; }
+.excel-fill-dialog .excel-fill-submit { min-width: 90px; color: var(--paper); background: var(--accent); }
+.excel-fill-dialog .excel-fill-submit:hover:not(:disabled) { background: var(--accent-dark); }
+.excel-fill-dialog .button { min-height: 36px; transition: none; }
+
+@media (max-width: 600px) {
+  .excel-fill-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); border-radius: var(--control-radius); }
+  .excel-fill-form { max-height: calc(100dvh - 18px); }
+  .excel-fill-header { padding: 16px; }
+  .excel-fill-body { padding: 16px; }
+  .excel-catalog-table td:first-child,
+  .excel-catalog-table td:last-child { position: static; box-shadow: none; }
+  .excel-catalog-table th:first-child,
+  .excel-catalog-table th:last-child { left: auto; right: auto; box-shadow: none; }
+  .excel-column-mapping { grid-template-columns: minmax(0, 1fr); }
+  .excel-fill-footer { flex-wrap: wrap; padding: 12px 16px; }
+  .excel-fill-footer > div { margin-left: auto; }
+}

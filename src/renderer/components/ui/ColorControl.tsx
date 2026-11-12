@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { registerPendingEdit } from '@/renderer/domain/pendingEdits';
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/;
 
@@ -11,12 +12,14 @@ type ColorControlProps = {
 
 export const ColorControl = ({ disabled = false, label, value, onChange }: ColorControlProps) => {
   const [draft, setDraft] = useState(value);
+  const composing = useRef(false);
   useEffect(() => setDraft(value), [value]);
 
-  const commit = (): void => {
-    if (HEX_COLOR.test(draft)) onChange(draft.toLowerCase());
-    else setDraft(value);
-  };
+  const commit = useCallback((): void => {
+    if (!HEX_COLOR.test(draft)) setDraft(value);
+    else if (draft.toLowerCase() !== value.toLowerCase()) onChange(draft.toLowerCase());
+  }, [draft, onChange, value]);
+  useLayoutEffect(() => registerPendingEdit({ flush: commit, isComposing: () => composing.current }), [commit]);
 
   return (
     <label className={`color-control${disabled ? ' is-disabled' : ''}`}>
@@ -30,6 +33,8 @@ export const ColorControl = ({ disabled = false, label, value, onChange }: Color
           aria-label={`${label}: HEX`}
           maxLength={9}
           onChange={(event) => setDraft(event.currentTarget.value)}
+          onCompositionStart={() => { composing.current = true; }}
+          onCompositionEnd={() => { composing.current = false; }}
           onBlur={commit}
           onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }}
         />

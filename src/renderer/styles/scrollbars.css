@@ -1,19 +1,19 @@
-:where(.canvas-col, .sidebar-section-body, .start-screen, .add-menu-popover) {
+:where(.canvas-col, .sidebar-section-body, .start-screen, .add-menu-popover, .excel-fill-body, .excel-catalog-scroll, .excel-preview-scroll) {
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
-:where(.canvas-col, .sidebar-section-body, .start-screen, .add-menu-popover)::-webkit-scrollbar {
+:where(.canvas-col, .sidebar-section-body, .start-screen, .add-menu-popover, .excel-fill-body, .excel-catalog-scroll, .excel-preview-scroll)::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 
-:where(.canvas-col, .sidebar-section-body, .start-screen, .add-menu-popover)::-webkit-scrollbar-track,
-:where(.canvas-col, .sidebar-section-body, .start-screen, .add-menu-popover)::-webkit-scrollbar-corner {
+:where(.canvas-col, .sidebar-section-body, .start-screen, .add-menu-popover, .excel-fill-body, .excel-catalog-scroll, .excel-preview-scroll)::-webkit-scrollbar-track,
+:where(.canvas-col, .sidebar-section-body, .start-screen, .add-menu-popover, .excel-fill-body, .excel-catalog-scroll, .excel-preview-scroll)::-webkit-scrollbar-corner {
   background: transparent;
 }
 
-:where(.canvas-col, .sidebar-section-body, .start-screen, .add-menu-popover)::-webkit-scrollbar-thumb {
+:where(.canvas-col, .sidebar-section-body, .start-screen, .add-menu-popover, .excel-fill-body, .excel-catalog-scroll, .excel-preview-scroll)::-webkit-scrollbar-thumb {
   min-width: 32px;
   min-height: 32px;
   border: 3px solid transparent;
@@ -22,11 +22,11 @@
   background-clip: padding-box;
 }
 
-:where(.canvas-col, .sidebar-section-body, .start-screen, .add-menu-popover)::-webkit-scrollbar-thumb:hover {
+:where(.canvas-col, .sidebar-section-body, .start-screen, .add-menu-popover, .excel-fill-body, .excel-catalog-scroll, .excel-preview-scroll)::-webkit-scrollbar-thumb:hover {
   background-color: var(--scrollbar-thumb-hover);
 }
 
-:where(.canvas-col, .sidebar-section-body, .start-screen, .add-menu-popover)::-webkit-scrollbar-thumb:active {
+:where(.canvas-col, .sidebar-section-body, .start-screen, .add-menu-popover, .excel-fill-body, .excel-catalog-scroll, .excel-preview-scroll)::-webkit-scrollbar-thumb:active {
   background-color: var(--scrollbar-thumb-active);
 }
 
@@ -65,7 +65,7 @@
 }
 
 @media (forced-colors: active) {
-  :where(.canvas-col, .sidebar-section-body, .start-screen, .add-menu-popover) {
+  :where(.canvas-col, .sidebar-section-body, .start-screen, .add-menu-popover, .excel-fill-body, .excel-catalog-scroll, .excel-preview-scroll) {
     scrollbar-color: auto;
   }
 }

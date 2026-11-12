@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { z } from 'zod';
+import { excelCatalogSchema } from '../shared/excelCatalog.js';
 import { IPC_CHANNEL, OpenProjectResult, SaveProjectArgs, ImportImageResult, MenuCommandPayload, RecentProjectSummary, RendererErrorPayload, type DesktopApi } from './api-types.js';
 
 const menuCommandSchema = z.object({
@@ -72,6 +73,10 @@ const desktop: DesktopApi = {
   },
   importImage: async (): Promise<ImportImageResult | null> => {
     return ipcRenderer.invoke(IPC_CHANNEL.IMPORT_IMAGE);
+  },
+  importExcel: async () => {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNEL.IMPORT_EXCEL);
+    return result === null ? null : excelCatalogSchema.parse(result);
   },
   exportPdf: async (snapshot: string): Promise<string | null> => {
     return ipcRenderer.invoke(IPC_CHANNEL.EXPORT_PDF, snapshot);

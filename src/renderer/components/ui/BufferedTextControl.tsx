@@ -23,6 +23,7 @@ type BufferedValue = {
 
 const useBufferedValue = (value: string, onCommit: (value: string) => void, delay: number): BufferedValue => {
   const [draft, setDraft] = useState(value);
+  const [commitRevision, setCommitRevision] = useState(0);
   const draftRef = useRef(value);
   const committedRef = useRef(value);
   const commitRef = useRef(onCommit);
@@ -30,12 +31,12 @@ const useBufferedValue = (value: string, onCommit: (value: string) => void, dela
   const composingRef = useRef(false);
 
   useLayoutEffect(() => { commitRef.current = onCommit; }, [onCommit]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (value === committedRef.current) return;
     committedRef.current = value;
     draftRef.current = value;
     setDraft(value);
-  }, [value]);
+  }, [value, commitRevision]);
   useEffect(() => () => {
     if (timerRef.current !== null) window.clearTimeout(timerRef.current);
   }, []);
@@ -47,6 +48,7 @@ const useBufferedValue = (value: string, onCommit: (value: string) => void, dela
     if (next === committedRef.current) return;
     committedRef.current = next;
     commitRef.current(next);
+    setCommitRevision(revision => revision + 1);
   }, []);
 
   useLayoutEffect(() => registerPendingEdit({ flush, isComposing: () => composingRef.current }), [flush]);

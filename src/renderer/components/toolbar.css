@@ -12,6 +12,8 @@
 }
 
 .toolbar-group { gap: 4px; }
+.toolbar-edit-actions { flex-wrap: wrap; }
+.excel-import-button { min-width: 173px; }
 .toolbar-file-actions > .button:first-child { min-width: 118px; }
 .preview-control { position: relative; display: inline-flex; }
 .preview-hint { position: absolute; top: calc(100% + 8px); left: 0; z-index: 80; width: max-content; max-width: calc(100vw - 24px); padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: #fffefa; font-size: 12px; font-weight: 500; visibility: hidden; pointer-events: none; }
@@ -69,6 +71,11 @@
 .add-menu-item-compact .add-menu-item-icon svg { width: 14px; height: 14px; }
 .add-menu-item-compact .add-menu-item-copy small { display: none; }
 .add-menu-item-compact .add-menu-item-copy strong { font-size: 10.5px; }
+
+@media (min-width: 761px) and (max-width: 1380px) {
+  .toolbar-wrap { flex-wrap: wrap; }
+  .toolbar-edit-actions { justify-content: flex-end; }
+}
 
 .add-menu-page-group { border-top: 1px solid rgba(57, 62, 53, 0.11); padding-top: 4px; }
 

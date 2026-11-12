@@ -2,6 +2,7 @@ import { Ellipsis, Grid2X2, Palette, Settings2, Trash2 } from 'lucide-react';
 import type { KpTableElement } from '@/renderer/domain/model';
 import { ColorControl } from '@/renderer/components/ui/ColorControl';
 import { useEditorStore } from '@/renderer/store/useEditorStore';
+import { runHistoryTransaction } from '@/renderer/store/historyTransaction';
 import { InspectorSection } from './InspectorSection';
 import { readNumber } from './utils';
 import { TableAlignmentControls } from './TableAlignmentControls';
@@ -86,8 +87,8 @@ export const TableInspector = ({ element, pageId }: TableInspectorProps) => {
 
       <InspectorSection title="Действия с таблицей" icon={<Ellipsis size={16} aria-hidden="true" />}>
         <div className="inspector-actions">
-          <button type="button" disabled={!canDeleteRows} onClick={() => selectedRowIds.forEach((rowId) => actions.deleteTableRow(pageId, element.id, rowId))}>Удалить выбранные строки</button>
-          <button type="button" disabled={!canDeleteColumns} onClick={() => selectedColumnIds.forEach((columnId) => actions.deleteTableColumn(pageId, element.id, columnId))}>Удалить выбранные столбцы</button>
+          <button type="button" disabled={!canDeleteRows} onClick={() => runHistoryTransaction(() => selectedRowIds.forEach((rowId) => actions.deleteTableRow(pageId, element.id, rowId)))}>Удалить выбранные строки</button>
+          <button type="button" disabled={!canDeleteColumns} onClick={() => runHistoryTransaction(() => selectedColumnIds.forEach((columnId) => actions.deleteTableColumn(pageId, element.id, columnId)))}>Удалить выбранные столбцы</button>
         </div>
         <button className="danger-action" type="button" onClick={() => actions.deleteSelected()}><Trash2 size={15} aria-hidden="true" /> Удалить таблицу</button>
       </InspectorSection>

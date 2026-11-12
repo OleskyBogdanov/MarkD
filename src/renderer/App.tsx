@@ -3,17 +3,27 @@ import { useShallow } from 'zustand/react/shallow';
 import { serializeProject, type RenderMode } from '@/renderer/domain/model';
 import { flushPendingEdits } from '@/renderer/domain/pendingEdits';
 import { useEditorStore } from './store/useEditorStore';
+import { insertImageWithAsset } from './store/historyTransaction';
 import { EditorWorkspace } from './features/editor/EditorWorkspace';
 import { useDocumentSession } from './features/editor/useDocumentSession';
 import { UpdatesPanel } from './components/UpdatesPanel';
 import { StartScreen } from './components/StartScreen';
+import { useExcelCatalog } from './features/excel/useExcelCatalog';
+import { ExcelTableFillDialog } from './features/excel/ExcelTableFillDialog';
 import type { MenuCommandPayload, OpenProjectResult, RecentProjectSummary } from '@/shared/ipc-channels';
 
 const waitForDocumentPaint = async (): Promise<void> => new Promise(resolve => {
   window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
 });
-const isTextEditing = (): boolean => document.activeElement instanceof HTMLElement &&
-  Boolean(document.activeElement.closest('input, textarea, [contenteditable="true"]'));
+const isTextEditing = (): boolean => {
+  const element = document.activeElement;
+  if (element instanceof HTMLTextAreaElement) return !element.readOnly && !element.disabled;
+  if (element instanceof HTMLInputElement) {
+    return !element.readOnly && !element.disabled
+      && ['text', 'search', 'url', 'tel', 'email', 'password', 'number'].includes(element.type);
+  }
+  return element instanceof HTMLElement && element.isContentEditable;
+};
 
 export const App = () => {
   const { project, isDirty, undoStack, redoStack, zoom } = useEditorStore(useShallow(state => ({
@@ -30,6 +40,10 @@ export const App = () => {
   const exporting = useRef(false);
   const renderModeBeforePrint = useRef<Exclude<RenderMode, 'print'>>('edit');
   const isBusy = operation.kind === 'saving' || operation.kind === 'exporting';
+  const excel = useExcelCatalog({
+    enabled: workspace === 'editor' && renderMode === 'edit' && !isBusy && !locked,
+    reportError
+  });
   const loadRecentProjects = useCallback(async (): Promise<void> => {
     setRecentProjectsLoading(true);
     try { setRecentProjects(await window.desktop.getRecentProjects()); }
@@ -54,10 +68,10 @@ export const App = () => {
     if (!exporting.current && !recovery) void transition(() => openEditor(undefined, kind));
   }, [openEditor, recovery, transition]);
   const handleSave = useCallback(async (mode: 'save' | 'as' | 'copy' | 'template' = 'save'): Promise<void> => {
-    if (workspace !== 'editor' || exporting.current) return;
+    if (workspace !== 'editor' || exporting.current || excel.importing) return;
     await save(mode);
     void loadRecentProjects();
-  }, [loadRecentProjects, save, workspace]);
+  }, [excel.importing, loadRecentProjects, save, workspace]);
   const togglePreview = useCallback((): void => {
     if (exporting.current) return;
     try {
@@ -67,7 +81,7 @@ export const App = () => {
     } catch (error) { reportError(error); }
   }, [reportError]);
   const handleExport = useCallback(async (): Promise<void> => {
-    if (workspace !== 'editor' || exporting.current || operation.kind === 'saving') return;
+    if (workspace !== 'editor' || exporting.current || operation.kind === 'saving' || excel.importing) return;
     exporting.current = true;
     const previousMode = renderMode === 'print' ? renderModeBeforePrint.current : renderMode;
     try {
@@ -81,9 +95,18 @@ export const App = () => {
       setOperation(result ? { kind: 'success', message: `PDF готов: ${result}` } : { kind: 'idle', message: '' });
     } catch (error) { reportError(error); }
     finally { setRenderMode(previousMode); exporting.current = false; }
-  }, [operation.kind, renderMode, reportError, setOperation, workspace]);
+  }, [excel.importing, operation.kind, renderMode, reportError, setOperation, workspace]);
 
-  const executeCommand = useCallback((command: MenuCommandPayload['command']): void => {
+  const executeCommand = useCallback((command: MenuCommandPayload['command'], target: 'focus' | 'document' = 'focus'): void => {
+    if (excel.importing) return;
+    const modal = document.querySelector('dialog[open]');
+    if (modal) {
+      if (modal.contains(document.activeElement) && isTextEditing()
+        && (command === 'undo' || command === 'redo' || command === 'delete')) {
+        window.desktop.nativeEdit(command);
+      }
+      return;
+    }
     if (command === 'new-document') { handleCreate(); return; }
     if (command === 'open') { handleOpen(); return; }
     if (workspace !== 'editor' || exporting.current) return;
@@ -91,7 +114,7 @@ export const App = () => {
     if (command === 'export-pdf') { void handleExport(); return; }
     if (renderMode !== 'edit') return;
     if (isTextEditing() && command === 'duplicate') return;
-    if (isTextEditing() && (command === 'undo' || command === 'redo' || command === 'delete')) {
+    if (target === 'focus' && isTextEditing() && (command === 'undo' || command === 'redo' || command === 'delete')) {
       window.desktop.nativeEdit(command);
       return;
     }
@@ -103,7 +126,7 @@ export const App = () => {
       if (command === 'delete') state.deleteSelected();
       if (command === 'duplicate') state.duplicateSelected();
     } catch (error) { reportError(error); }
-  }, [handleCreate, handleExport, handleOpen, handleSave, renderMode, reportError, workspace]);
+  }, [excel.importing, handleCreate, handleExport, handleOpen, handleSave, renderMode, reportError, workspace]);
 
   useEffect(() => window.desktop.onMenuCommand(({ command }) => executeCommand(command)), [executeCommand]);
   useEffect(() => {
@@ -119,8 +142,13 @@ export const App = () => {
       if (!modifier && !isTextEditing() && (key === 'delete' || key === 'backspace')) command = 'delete';
       if (command) { event.preventDefault(); executeCommand(command); }
     };
+    const endHistoryGroup = (): void => useEditorStore.getState().endHistoryGroup();
     window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
+    window.addEventListener('focusin', endHistoryGroup);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('focusin', endHistoryGroup);
+    };
   }, [executeCommand]);
   useEffect(() => {
     if (!ready || recovery) return;
@@ -161,8 +189,7 @@ export const App = () => {
       const image = await window.desktop.importImage();
       const current = useEditorStore.getState();
       if (!image || !pageId || current.sessionId !== state.sessionId || !current.project.pages.some(page => page.id === pageId)) return;
-      current.addAsset(image);
-      current.addImage(pageId, image.id);
+      insertImageWithAsset({ pageId, asset: image });
     } catch (error) { reportError(error); }
   };
 
@@ -196,8 +223,14 @@ export const App = () => {
       onSaveCopy: () => { void handleSave('copy'); }, onSaveTemplate: () => { void handleSave('template'); },
       onReveal: path ? () => { void window.desktop.revealProject(path).catch(reportError); } : undefined,
       onOpen: () => handleOpen(),
-      onUndo: () => executeCommand('undo'), onRedo: () => executeCommand('redo'),
-      isDirty, isBusy, onExport: () => { void handleExport(); }, onTogglePreview: togglePreview,
+      onImportExcel: () => { setOperation({ kind: 'idle', message: '' }); void excel.importExcel(); },
+      onFillFromExcel: excel.openFill,
+      excelFileName: excel.catalog?.fileName, importingExcel: excel.importing,
+      onUndo: () => executeCommand('undo', 'document'), onRedo: () => executeCommand('redo', 'document'),
+      isDirty, isBusy: isBusy || excel.importing, onExport: () => { void handleExport(); }, onTogglePreview: togglePreview,
       canUndo: undoStack.length > 0, canRedo: redoStack.length > 0
-    }} /></div>;
+    }} />
+    {excel.catalog && excel.dialogOpen ? <ExcelTableFillDialog key={excel.sessionId}
+      catalog={excel.catalog} sessionId={excel.sessionId} onClose={excel.closeFill} /> : null}
+  </div>;
 };

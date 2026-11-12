@@ -1,4 +1,4 @@
-import { Eye, FileUp, LoaderCircle, PanelRight, Redo2, Save, Undo2 } from 'lucide-react';
+import { Eye, FileSpreadsheet, FileUp, LoaderCircle, PanelRight, Redo2, Save, Undo2 } from 'lucide-react';
 import { useId } from 'react';
 import { Button } from '@/renderer/components/ui/button';
 import { ActionMenu } from '@/renderer/components/ui/ActionMenu';
@@ -20,6 +20,10 @@ type ToolbarProps = {
   onReveal?: () => void;
   onSaveTemplate: () => void;
   onOpen: () => void;
+  onImportExcel: () => void;
+  onFillFromExcel: () => void;
+  excelFileName: string | undefined;
+  importingExcel: boolean;
   onUndo: () => void;
   onRedo: () => void;
   onExport: () => void;
@@ -35,6 +39,7 @@ type ToolbarProps = {
 export const Toolbar = ({
   onAddPage, onAddText, onAddTextField, onAddSelectField, onAddTable, onAddImage, onAddShape,
   onSaveFile, onSaveTemplate, onSaveAs, onSaveCopy, onReveal, onOpen,
+  onImportExcel, onFillFromExcel, excelFileName, importingExcel,
   onUndo, onRedo, onExport, onTogglePreview, onToggleStructure,
   sidebarVisible, canUndo, canRedo, isDirty, isBusy
 }: ToolbarProps) => {
@@ -42,6 +47,11 @@ export const Toolbar = ({
   return (
   <nav className="toolbar-wrap" aria-label="Инструменты документа">
     <div className="toolbar-group toolbar-edit-actions">
+      <Button onClick={onImportExcel} disabled={isBusy} variant="ghost" className="excel-import-button"
+        aria-busy={importingExcel} title={excelFileName ? `Заменить прайс: ${excelFileName}` : 'Импортировать Excel'}>
+        <FileSpreadsheet size={16} aria-hidden="true" />
+        <span>{importingExcel ? 'Импорт Excel…' : 'Импортировать Excel'}</span>
+      </Button>
       <ActionMenu label="Файл" disabled={isBusy} actions={[
         { label: 'Открыть', run: onOpen },
         { label: 'Сохранить файл', run: onSaveFile },
@@ -50,6 +60,8 @@ export const Toolbar = ({
         { label: 'Сохранить как шаблон', run: onSaveTemplate },
         ...(onReveal ? [{ label: 'Показать файл', run: onReveal }] : [])
       ]} />
+      {excelFileName ? <Button onClick={onFillFromExcel} disabled={isBusy} variant="outline"
+        title={excelFileName}>Заполнить таблицу из Excel</Button> : null}
       <Button className="icon-button" onClick={onUndo} title="Отменить" aria-label="Отменить" disabled={!canUndo}><Undo2 size={16} aria-hidden="true" /></Button>
       <Button className="icon-button" onClick={onRedo} title="Повторить" aria-label="Повторить" disabled={!canRedo}><Redo2 size={16} aria-hidden="true" /></Button>
       <AddElementMenu disabled={isBusy} onAddPage={onAddPage} onAddText={onAddText}

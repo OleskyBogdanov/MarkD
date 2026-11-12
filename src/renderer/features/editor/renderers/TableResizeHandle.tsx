@@ -1,5 +1,7 @@
-import { useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { clamp } from '@/renderer/domain/model';
+import { flushPendingEdits } from '@/renderer/domain/pendingEdits';
+import { useEditorStore } from '@/renderer/store/useEditorStore';
 
 type Props = {
   readonly ariaLabel: string;
@@ -16,9 +18,14 @@ type Props = {
 
 export const TableResizeHandle = ({ ariaLabel, className, max, min, orientation, pixelsPerUnit, style, testId, value, onChange }: Props) => {
   const dragRef = useRef<{ pointerPosition: number; value: number; pixelsPerUnit: number } | null>(null);
+  useEffect(() => () => {
+    if (dragRef.current) useEditorStore.getState().endHistoryTransaction();
+  }, []);
   const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
     event.preventDefault();
     event.stopPropagation();
+    flushPendingEdits();
+    useEditorStore.getState().beginHistoryTransaction();
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = {
       pointerPosition: orientation === 'vertical' ? event.clientX : event.clientY, value,
@@ -32,8 +39,10 @@ export const TableResizeHandle = ({ ariaLabel, className, max, min, orientation,
     onChange(clamp(drag.value + (pointerPosition - drag.pointerPosition) / Math.max(0.01, drag.pixelsPerUnit), min, max));
   };
   const stopPointerDrag = (event: PointerEvent<HTMLDivElement>): void => {
+    if (!dragRef.current) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     dragRef.current = null;
+    useEditorStore.getState().endHistoryTransaction();
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     const decreases = orientation === 'vertical' ? event.key === 'ArrowLeft' : event.key === 'ArrowUp';
@@ -47,7 +56,7 @@ export const TableResizeHandle = ({ ariaLabel, className, max, min, orientation,
     <div aria-label={ariaLabel} aria-orientation={orientation} aria-valuemax={Math.round(max)}
       aria-valuemin={Math.round(min)} aria-valuenow={Math.round(value)} className={className}
       data-testid={testId} role="separator" style={style} tabIndex={0}
-      onKeyDown={onKeyDown} onPointerCancel={stopPointerDrag} onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown} onPointerCancel={stopPointerDrag} onLostPointerCapture={stopPointerDrag} onPointerDown={onPointerDown}
       onPointerMove={onPointerMove} onPointerUp={stopPointerDrag} />
   );
 };
