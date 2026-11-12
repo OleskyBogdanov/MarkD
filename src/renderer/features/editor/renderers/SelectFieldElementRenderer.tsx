@@ -34,7 +34,7 @@ export const SelectFieldElementRenderer = ({
   const selectedOption = element.options.find((option) => option.id === element.selectedOptionId);
   const inputId = `canvas-${element.id}`;
   const fieldRef = useRef<HTMLDivElement>(null);
-  const hasOverflow = useTextOverflow(fieldRef, mode === 'edit');
+  const hasOverflow = useTextOverflow(fieldRef, mode === 'edit', element, rect);
   const style = {
     '--field-font-family': fontFamilyForId(element.style.fontId),
     '--field-font-size': `${element.style.fontSize * zoom}px`,

@@ -7,6 +7,7 @@ type TextMeasurement = {
 // padding, an empty textarea's minimum row, and integer rounding.
 export const measureTextContent = (node: HTMLElement, checkClipping = true): TextMeasurement => {
   const style = getComputedStyle(node);
+  const zoom = node.currentCSSZoom;
   const control = node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement || node instanceof HTMLSelectElement;
   const text = node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement
     ? node.value || node.placeholder
@@ -14,29 +15,35 @@ export const measureTextContent = (node: HTMLElement, checkClipping = true): Tex
       ? node.selectedOptions[0]?.textContent || ''
       : node.textContent || '';
   const px = (value: string): number => Number.parseFloat(value) || 0;
-  let target = node;
-  let mirror: HTMLDivElement | undefined;
-  if (control) {
-    mirror = document.createElement('div');
-    // Copy resolved typography and box metrics, including inherited CSS variables.
-    for (const property of style) mirror.style.setProperty(property, style.getPropertyValue(property));
-    Object.assign(mirror.style, {
-      position: 'fixed', left: '0px', top: '0px', margin: '0px',
-      width: style.width, height: 'auto', minHeight: '0px', maxHeight: 'none',
-      minWidth: '0px', maxWidth: 'none', visibility: 'hidden', pointerEvents: 'none',
-      transform: 'none', overflow: 'visible', contain: 'none',
-      display: 'block', contentVisibility: 'visible'
-    });
-    mirror.textContent = text || '\u200b';
-    document.body.append(mirror);
-    target = mirror;
-  }
+  const target = document.createElement('div');
+  // Measure every text run at document scale, including labels and shape text.
+  // Copy only properties that affect text layout instead of the entire CSSOM.
+  for (const property of [
+    'box-sizing', 'width', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+    'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
+    'border-top-style', 'border-right-style', 'border-bottom-style', 'border-left-style',
+    'font-family', 'font-size', 'font-weight', 'font-style', 'font-stretch',
+    'font-kerning', 'font-feature-settings', 'font-variation-settings', 'font-optical-sizing',
+    'font-variant', 'font-variant-ligatures', 'font-size-adjust',
+    'line-height', 'letter-spacing', 'word-spacing', 'white-space', 'overflow-wrap',
+    'word-break', 'hyphens', 'tab-size', 'text-align', 'text-indent', 'text-transform',
+    'text-rendering', 'direction', 'unicode-bidi', 'writing-mode'
+  ]) target.style.setProperty(property, style.getPropertyValue(property));
+  Object.assign(target.style, {
+    position: 'fixed', left: '0px', top: '0px', margin: '0px',
+    width: style.width, height: 'auto', minHeight: '0px', maxHeight: 'none',
+    minWidth: '0px', maxWidth: 'none', visibility: 'hidden', pointerEvents: 'none',
+    transform: 'none', overflow: 'visible', contain: 'none',
+    display: 'block', contentVisibility: 'visible'
+  });
+  target.textContent = text || '\u200b';
+  document.body.append(target);
 
   const box = node.getBoundingClientRect();
   const targetBox = target.getBoundingClientRect();
   const height = targetBox.height;
   if (!checkClipping || !text) {
-    mirror?.remove();
+    target.remove();
     return { height, clipped: false };
   }
   // DOM ranges supply the browser's wrapping and baseline positions. Their
@@ -92,18 +99,17 @@ export const measureTextContent = (node: HTMLElement, checkClipping = true): Tex
     }
     child = walker.nextNode();
   }
-  const scaleX = control && targetBox.width ? box.width / targetBox.width : 1;
   // Native selects center their single text line vertically.
   const selectOffset = node instanceof HTMLSelectElement && fragments.length
-    ? (box.height - targetBox.height) / 2
+    ? (box.height - targetBox.height * zoom) / 2
     : 0;
   const bounds = fragments.map(fragment => ({
-    left: control ? box.left + (fragment.left - targetBox.left) * scaleX : fragment.left,
-    right: control ? box.left + (fragment.right - targetBox.left) * scaleX : fragment.right,
-    top: control ? box.top + fragment.top - targetBox.top + selectOffset : fragment.top,
-    bottom: control ? box.top + fragment.bottom - targetBox.top + selectOffset : fragment.bottom
+    left: box.left + (fragment.left - targetBox.left) * zoom,
+    right: box.left + (fragment.right - targetBox.left) * zoom,
+    top: box.top + (fragment.top - targetBox.top) * zoom + selectOffset,
+    bottom: box.top + (fragment.bottom - targetBox.top) * zoom + selectOffset
   }));
-  mirror?.remove();
+  target.remove();
   if (bounds.length === 0) return { height, clipped: false };
 
   // A centered child can be clipped by its parent without overflowing itself.
@@ -116,11 +122,12 @@ export const measureTextContent = (node: HTMLElement, checkClipping = true): Tex
     const clipY = ancestor === node && control || /hidden|clip|auto|scroll/.test(ancestorStyle.overflowY);
     if (clipX || clipY) {
       const rect = ancestor.getBoundingClientRect();
-      const left = rect.left + px(ancestorStyle.borderLeftWidth);
-      const right = rect.right - px(ancestorStyle.borderRightWidth) -
-        (ancestor instanceof HTMLSelectElement ? px(ancestorStyle.paddingRight) : 0);
-      const top = rect.top + px(ancestorStyle.borderTopWidth);
-      const bottom = rect.bottom - px(ancestorStyle.borderBottomWidth);
+      const ancestorZoom = ancestor.currentCSSZoom;
+      const left = rect.left + px(ancestorStyle.borderLeftWidth) * ancestorZoom;
+      const right = rect.right - (px(ancestorStyle.borderRightWidth) +
+        (ancestor instanceof HTMLSelectElement ? px(ancestorStyle.paddingRight) : 0)) * ancestorZoom;
+      const top = rect.top + px(ancestorStyle.borderTopWidth) * ancestorZoom;
+      const bottom = rect.bottom - px(ancestorStyle.borderBottomWidth) * ancestorZoom;
       // Chromium lays out at 1/64 CSS px; permit only one layout quantum.
       clipped ||= bounds.some(fragment =>
         (clipX && (fragment.left < left - 1 / 64 || fragment.right > right + 1 / 64)) ||

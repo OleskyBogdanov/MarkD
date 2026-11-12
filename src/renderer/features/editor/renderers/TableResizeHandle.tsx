@@ -15,18 +15,21 @@ type Props = {
 };
 
 export const TableResizeHandle = ({ ariaLabel, className, max, min, orientation, pixelsPerUnit, style, testId, value, onChange }: Props) => {
-  const dragRef = useRef<{ pointerPosition: number; value: number } | null>(null);
+  const dragRef = useRef<{ pointerPosition: number; value: number; pixelsPerUnit: number } | null>(null);
   const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { pointerPosition: orientation === 'vertical' ? event.clientX : event.clientY, value };
+    dragRef.current = {
+      pointerPosition: orientation === 'vertical' ? event.clientX : event.clientY, value,
+      pixelsPerUnit: pixelsPerUnit * event.currentTarget.currentCSSZoom
+    };
   };
   const onPointerMove = (event: PointerEvent<HTMLDivElement>): void => {
     const drag = dragRef.current;
     if (!drag) return;
     const pointerPosition = orientation === 'vertical' ? event.clientX : event.clientY;
-    onChange(clamp(drag.value + (pointerPosition - drag.pointerPosition) / Math.max(0.01, pixelsPerUnit), min, max));
+    onChange(clamp(drag.value + (pointerPosition - drag.pointerPosition) / Math.max(0.01, drag.pixelsPerUnit), min, max));
   };
   const stopPointerDrag = (event: PointerEvent<HTMLDivElement>): void => {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);

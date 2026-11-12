@@ -6,7 +6,7 @@ type AutoSizeTextarea = {
   resize: () => void;
 };
 
-export const useAutoSizeTextarea = (): AutoSizeTextarea => {
+export const useAutoSizeTextarea = (value: string, layoutKey: string): AutoSizeTextarea => {
   const ref = useRef<HTMLTextAreaElement>(null);
 
   const resize = useCallback((): void => {
@@ -15,7 +15,7 @@ export const useAutoSizeTextarea = (): AutoSizeTextarea => {
     if (!node || !container) return;
 
     const containerStyle = getComputedStyle(container);
-    const availableHeight = Math.max(0, container.getBoundingClientRect().height -
+    const availableHeight = Math.max(0, Number.parseFloat(containerStyle.height) -
       (Number.parseFloat(containerStyle.borderTopWidth) || 0) -
       (Number.parseFloat(containerStyle.borderBottomWidth) || 0) -
       (Number.parseFloat(containerStyle.paddingTop) || 0) -
@@ -27,7 +27,7 @@ export const useAutoSizeTextarea = (): AutoSizeTextarea => {
 
   useLayoutEffect(() => {
     resize();
-  });
+  }, [layoutKey, resize, value]);
 
   useLayoutEffect(() => {
     const node = ref.current;
@@ -43,7 +43,7 @@ export const useAutoSizeTextarea = (): AutoSizeTextarea => {
       contentObserver.disconnect();
       document.fonts.removeEventListener('loadingdone', resize);
     };
-  }, [resize]);
+  }, [layoutKey, resize]);
 
   return { ref, resize };
 };

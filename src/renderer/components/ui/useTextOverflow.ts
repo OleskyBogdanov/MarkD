@@ -1,10 +1,11 @@
-import { useCallback, useLayoutEffect, useState, type RefObject } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { measureTextContent } from './textMeasurement';
 
 const textSelector = 'textarea, select, [data-overflow-text]';
 
-export const useTextOverflow = (ref: RefObject<HTMLElement | null>, enabled: boolean): boolean => {
+export const useTextOverflow = (ref: RefObject<HTMLElement | null>, enabled: boolean, content: object, geometry: object): boolean => {
   const [hasOverflow, setHasOverflow] = useState(false);
+  const frame = useRef<number | undefined>(undefined);
   const measure = useCallback(() => {
     const root = ref.current;
     const nodes = root
@@ -13,36 +14,42 @@ export const useTextOverflow = (ref: RefObject<HTMLElement | null>, enabled: boo
     setHasOverflow(enabled && nodes.some(node => measureTextContent(node).clipped));
   }, [enabled, ref]);
 
-  useLayoutEffect(measure);
+  const scheduleMeasure = useCallback(() => {
+    if (!enabled) {
+      measure();
+      return;
+    }
+    if (frame.current !== undefined) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = undefined;
+      measure();
+    });
+  }, [enabled, measure]);
+
+  useLayoutEffect(scheduleMeasure, [content, geometry, scheduleMeasure]);
 
   useLayoutEffect(() => {
-    const root = ref.current;
+    scheduleMeasure();
+    // The content container survives switching a shape between text and editing.
+    const root = ref.current?.closest('.canvas-element-content') ?? ref.current;
     if (!enabled || !root) return;
-    const observer = new ResizeObserver(measure);
+    const observer = new ResizeObserver(scheduleMeasure);
     observer.observe(root);
-    root.querySelectorAll(textSelector).forEach(node => observer.observe(node));
-    // Buffered controls update their draft after the containing renderer commits.
-    const contentObserver = new MutationObserver(measure);
+    const contentObserver = new MutationObserver(scheduleMeasure);
     contentObserver.observe(root, { subtree: true, childList: true, characterData: true });
-    // Native listeners run before React's delegated change handler. Even a
-    // microtask can run between those listeners and restore the old draft.
-    let frame: number | undefined;
-    const onInput = (): void => {
-      if (frame !== undefined) cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(measure);
-    };
-    root.addEventListener('input', onInput);
-    root.addEventListener('change', onInput);
-    document.fonts.addEventListener('loadingdone', measure);
+    root.addEventListener('input', scheduleMeasure);
+    root.addEventListener('change', scheduleMeasure);
+    document.fonts.addEventListener('loadingdone', scheduleMeasure);
     return () => {
       observer.disconnect();
       contentObserver.disconnect();
-      if (frame !== undefined) cancelAnimationFrame(frame);
-      root.removeEventListener('input', onInput);
-      root.removeEventListener('change', onInput);
-      document.fonts.removeEventListener('loadingdone', measure);
+      if (frame.current !== undefined) cancelAnimationFrame(frame.current);
+      frame.current = undefined;
+      root.removeEventListener('input', scheduleMeasure);
+      root.removeEventListener('change', scheduleMeasure);
+      document.fonts.removeEventListener('loadingdone', scheduleMeasure);
     };
-  });
+  }, [enabled, ref, scheduleMeasure]);
 
   return hasOverflow;
 };

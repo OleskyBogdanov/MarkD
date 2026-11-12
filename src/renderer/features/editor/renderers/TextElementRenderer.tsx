@@ -32,7 +32,7 @@ export const TextElementRenderer = ({
   onResizeStart
 }: TextElementRendererProps) => {
   const contentRef = useRef<HTMLTextAreaElement | HTMLDivElement>(null);
-  const hasOverflow = useTextOverflow(contentRef, mode === 'edit');
+  const hasOverflow = useTextOverflow(contentRef, mode === 'edit', element, rect);
 
   const contentStyle = {
     fontFamily: fontFamilyForId(element.style.fontId),

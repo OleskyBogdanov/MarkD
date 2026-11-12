@@ -48,7 +48,7 @@ export const ShapeElementRenderer = ({
   const textRef = useRef<HTMLTextAreaElement | HTMLDivElement>(null);
   const [editingText, setEditingText] = useState(false);
   const supportsText = element.shape !== 'line';
-  const hasOverflow = useTextOverflow(textRef, mode === 'edit' && supportsText);
+  const hasOverflow = useTextOverflow(textRef, mode === 'edit' && supportsText, element, rect);
   const fill = element.style.fillTransparent || element.shape === 'line' ? 'none' : element.style.fillColor;
   const strokeWidth = element.style.strokeWidth * zoom;
   const cornerRadiusX = Math.min(49, (element.style.cornerRadius * zoom * 100) / Math.max(rect.width * scale, 1));

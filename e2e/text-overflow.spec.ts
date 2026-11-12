@@ -266,3 +266,34 @@ test('font loading refreshes warnings without changing element geometry', async 
     await expect(warning).toHaveCount(size === 72 ? 1 : 0);
   }
 });
+
+test('zoom preserves fitting text and the logical content area', async () => {
+  await updateFixture(fixture => {
+    const text = fixture.pages[0].elements.find(element => element.type === 'text');
+    if (!text) throw new Error('The fixture must contain a text element.');
+    text.text = 'Near fitting';
+    text.rect.height = 7;
+    text.style.fontSize = 16;
+  });
+  const canvas = page.getByRole('region', { name: 'Рабочая область документа' });
+  const element = page.getByTestId('text-element');
+  const content = element.locator('.canvas-element-content');
+  await expect(element.getByRole('textbox')).toHaveValue('Near fitting');
+  await page.evaluate(() => document.fonts.ready);
+  await expect(page.getByTitle('Текст не помещается в границы элемента')).toHaveCount(0);
+  const initial = await content.evaluate(node => node.getBoundingClientRect().height);
+  for (const zoom of [0.25, 0.39, 0.6, 0.94, 1, 2]) {
+    await canvas.dispatchEvent('wheel', { ctrlKey: true, deltaY: 10000, cancelable: true });
+    await expect(page.getByLabel('Текущий масштаб', { exact: true })).toHaveText('25%');
+    if (zoom > 0.25) {
+      await canvas.dispatchEvent('wheel', { ctrlKey: true, deltaY: -Math.log(zoom / 0.25) / 0.002, cancelable: true });
+    }
+    await expect(page.getByLabel('Текущий масштаб', { exact: true })).toHaveText(`${Math.round(zoom * 100)}%`);
+    await expect.poll(async () => (await content.evaluate(node => node.getBoundingClientRect().height)) / zoom).toBeCloseTo(initial, 1);
+    await expect(page.getByTitle('Текст не помещается в границы элемента')).toHaveCount(0);
+    await element.getByRole('textbox').fill('First\nSecond\nThird\nFourth');
+    await expect(element.getByTitle('Текст не помещается в границы элемента')).toHaveCount(1);
+    await element.getByRole('textbox').fill('Near fitting');
+    await expect(page.getByTitle('Текст не помещается в границы элемента')).toHaveCount(0);
+  }
+});

@@ -42,7 +42,7 @@ export const TableElementRenderer = ({
   sourceTable, tableRange, tableCell, onRangeSelect
 }: TableElementRendererProps) => {
   const contentRef = useRef<HTMLDivElement>(null);
-  const hasOverflow = useTextOverflow(contentRef, mode === 'edit');
+  const hasOverflow = useTextOverflow(contentRef, mode === 'edit', element, rect);
   const { selectionButton, selectionKeyDown, startSelection, moveSelection, stopSelection } = useTableSelectionControls({
     element, sourceTable, contentRef, tableRange, tableCell, onRangeSelect, onSelect
   });

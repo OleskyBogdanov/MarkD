@@ -354,7 +354,7 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
   return (
     <div className="pages-list" data-render-mode={renderMode} style={{ '--print-scale': 1 / zoom, '--canvas-zoom': zoom } as CSSProperties}>
       {paginatedPages.map((page, pageIndex) => {
-        const scale = mmToPx(1, 96, zoom);
+        const scale = mmToPx(1);
         return (
           <section className="page-item" data-testid="editor-page" data-page-id={page.sourcePageId} key={page.id}
             onPointerDownCapture={renderMode === 'edit' ? () => useEditorStore.getState().setActivePage(page.sourcePageId) : undefined}>
@@ -367,7 +367,10 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
             <div
               ref={(node) => setPageRef(page.id, node)}
               className={`page ${dropTargetPageId === page.id ? 'page-drop-target' : ''}`}
-              style={{ width: `${mmToPx(page.widthMm, 96, zoom)}px`, height: `${mmToPx(page.heightMm, 96, zoom)}px` }}
+              style={{
+                width: `${mmToPx(page.widthMm)}px`, height: `${mmToPx(page.heightMm)}px`, zoom,
+                '--canvas-zoom': 1, '--document-zoom': zoom
+              } as CSSProperties}
               onDragEnter={renderMode === 'edit' ? (event) => {
                 if (Array.from(event.dataTransfer.items).some((item) => item.kind === 'file')) setDropTargetPageId(page.id);
               } : undefined}
@@ -411,13 +414,13 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
                 const onResizeStart = (event: ReactPointerEvent<HTMLButtonElement>): void => startInteraction('resize', sourcePageId, element.id, event);
 
                 if (element.type === 'text') {
-                  return <TextElementRenderer key={element.id} element={element} mode={elementMode} rect={rect} scale={scale} selected={isSelected} zoom={zoom} onSelect={onSelect} onChange={(value) => updateText(sourcePageId, element.id, value)} onMoveStart={onMoveStart} onResizeStart={onResizeStart} />;
+                  return <TextElementRenderer key={element.id} element={element} mode={elementMode} rect={rect} scale={scale} selected={isSelected} zoom={1} onSelect={onSelect} onChange={(value) => updateText(sourcePageId, element.id, value)} onMoveStart={onMoveStart} onResizeStart={onResizeStart} />;
                 }
                 if (element.type === 'textField') {
-                  return <TextFieldElementRenderer key={element.id} element={element} mode={elementMode} rect={rect} scale={scale} selected={isSelected} zoom={zoom} onSelect={onSelect} onValueChange={(value) => updateTextField(sourcePageId, element.id, { value })} onMoveStart={onMoveStart} onResizeStart={onResizeStart} />;
+                  return <TextFieldElementRenderer key={element.id} element={element} mode={elementMode} rect={rect} scale={scale} selected={isSelected} zoom={1} onSelect={onSelect} onValueChange={(value) => updateTextField(sourcePageId, element.id, { value })} onMoveStart={onMoveStart} onResizeStart={onResizeStart} />;
                 }
                 if (element.type === 'selectField') {
-                  return <SelectFieldElementRenderer key={element.id} element={element} mode={elementMode} rect={rect} scale={scale} selected={isSelected} zoom={zoom} onSelect={onSelect} onValueChange={(selectedOptionId) => updateSelectField(sourcePageId, element.id, { selectedOptionId })} onMoveStart={onMoveStart} onResizeStart={onResizeStart} />;
+                  return <SelectFieldElementRenderer key={element.id} element={element} mode={elementMode} rect={rect} scale={scale} selected={isSelected} zoom={1} onSelect={onSelect} onValueChange={(selectedOptionId) => updateSelectField(sourcePageId, element.id, { selectedOptionId })} onMoveStart={onMoveStart} onResizeStart={onResizeStart} />;
                 }
                 if (element.type === 'image') {
                   const fillsPage =
@@ -426,14 +429,14 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
                     Math.abs(rect.width - page.widthMm) < 0.01 &&
                     Math.abs(rect.height - page.heightMm) < 0.01;
                   const controlsInside =
-                    rect.x * scale < EDITOR_CONTROL_CLEARANCE_PX ||
-                    rect.y * scale < EDITOR_CONTROL_CLEARANCE_PX ||
-                    (page.widthMm - rect.x - rect.width) * scale < EDITOR_CONTROL_CLEARANCE_PX ||
-                    (page.heightMm - rect.y - rect.height) * scale < EDITOR_CONTROL_CLEARANCE_PX;
+                    rect.x * scale * zoom < EDITOR_CONTROL_CLEARANCE_PX ||
+                    rect.y * scale * zoom < EDITOR_CONTROL_CLEARANCE_PX ||
+                    (page.widthMm - rect.x - rect.width) * scale * zoom < EDITOR_CONTROL_CLEARANCE_PX ||
+                    (page.heightMm - rect.y - rect.height) * scale * zoom < EDITOR_CONTROL_CLEARANCE_PX;
                   return <ImageElementRenderer key={element.id} asset={assetsById.get(element.assetId)} element={element} mode={elementMode} rect={rect} scale={scale} selected={isSelected} controlsInside={controlsInside} fillsPage={fillsPage} onSelect={onSelect} onMoveStart={onMoveStart} onResizeStart={onResizeStart} />;
                 }
                 if (element.type === 'shape') {
-                  return <ShapeElementRenderer key={element.id} element={element} mode={elementMode} rect={rect} scale={scale} selected={isSelected} zoom={zoom} onSelect={onSelect} onTextChange={(text) => updateShape(sourcePageId, element.id, { text })} onMoveStart={onMoveStart} onResizeStart={onResizeStart} />;
+                  return <ShapeElementRenderer key={element.id} element={element} mode={elementMode} rect={rect} scale={scale} selected={isSelected} zoom={1} onSelect={onSelect} onTextChange={(text) => updateShape(sourcePageId, element.id, { text })} onMoveStart={onMoveStart} onResizeStart={onResizeStart} />;
                 }
                 return (
                   <TableElementRenderer
@@ -447,7 +450,7 @@ export const ProjectCanvas = ({ project, zoom, renderMode }: ProjectCanvasProps)
                     tableRange={isSelected && selected.type === 'element' ? selected.tableRange : undefined}
                     tableCell={isSelected && selected.type === 'element' ? selected.tableCell : undefined}
                     onRangeSelect={(tableRange) => select({ type: 'element', pageId: sourcePageId, elementId: element.id, tableRange })}
-                    zoom={zoom}
+                    zoom={1}
                     showPrimaryChrome={interactive && page.id === sourcePageId}
                     onSelect={onSelect}
                     onCellSelect={(rowId, columnId) => select({

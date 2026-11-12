@@ -1,5 +1,23 @@
-.element-toolbar .table-inspector-panel,
-.table-inspector-panel .table-alignment-tools { flex-wrap: nowrap; }
-.table-inspector-panel > button,
+.element-toolbar:has(.table-inspector-panel) { overflow: visible; }
+.element-toolbar .inspector-panel.table-inspector-panel { flex: 1 1 0; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .table-inspector-panel > .text-format-controls,
-.table-inspector-panel > .table-alignment-tools { flex: 0 0 auto; white-space: nowrap; }
+.table-inspector-panel > .table-alignment-tools { display: contents; }
+.table-inspector-panel .format-font select { width: 130px; }
+.table-inspector-panel .format-size input { width: 60px; }
+.table-inspector-panel .format-font > span,
+.table-inspector-panel .format-size > span,
+.table-inspector-panel .inspector-section-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.table-inspector-panel > .text-format-controls > .color-control { gap: 0; font-size: 0; }
+.element-toolbar .table-inspector-panel .inspector-section-toggle { min-height: 32px; gap: 4px; padding: 4px 8px; }
+.table-inspector-panel > .text-format-controls :is(input, select),
+.table-inspector-panel > :is(.text-format-controls, .table-alignment-tools) .segmented-control button { min-height: 30px; height: 30px; }
+.table-inspector-panel > :is(.text-format-controls, .table-alignment-tools) .segmented-control { min-height: 32px; height: 32px; }
+.table-inspector-panel .inspector-section-content .inspector-actions { display: grid; gap: 8px; }
+.table-inspector-panel .inspector-section-content .inspector-actions button { justify-content: flex-start; white-space: normal; text-align: left; }
+.table-inspector-panel .inspector-section-content .danger-action { margin-top: 12px; }
+
+@media (max-width: 600px) {
+  .element-toolbar:has(.table-inspector-panel) { height: 128px; flex-basis: 128px; }
+  .element-toolbar:has(.table-inspector-panel) .element-toolbar-context { display: none; }
+  .element-toolbar .inspector-panel.table-inspector-panel { gap: 6px; }
+}

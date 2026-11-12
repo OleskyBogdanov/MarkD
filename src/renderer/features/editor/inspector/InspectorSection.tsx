@@ -6,12 +6,14 @@ type InspectorSectionProps = {
   defaultOpen?: boolean;
   summary?: string;
   title: string;
+  icon?: ReactNode;
 };
 
 export const InspectorSection = ({
   children,
   summary,
-  title
+  title,
+  icon
 }: InspectorSectionProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const contentId = useId();
@@ -23,11 +25,13 @@ export const InspectorSection = ({
           className="inspector-section-toggle"
           type="button"
           aria-label={title}
+          title={title}
           aria-controls={contentId}
           aria-expanded={isOpen}
           popoverTarget={contentId}
         >
-          <span>{title}</span>
+          {icon}
+          <span className="inspector-section-label">{title}</span>
           <span className="inspector-section-meta">
             {summary ? <span className="inspector-section-summary">{summary}</span> : null}
             <ChevronDown size={14} strokeWidth={1.8} aria-hidden="true" />

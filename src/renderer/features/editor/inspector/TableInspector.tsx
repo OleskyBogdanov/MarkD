@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react';
+import { Ellipsis, Grid2X2, Palette, Settings2, Trash2 } from 'lucide-react';
 import type { KpTableElement } from '@/renderer/domain/model';
 import { ColorControl } from '@/renderer/components/ui/ColorControl';
 import { useEditorStore } from '@/renderer/store/useEditorStore';
@@ -39,7 +39,7 @@ export const TableInspector = ({ element, pageId }: TableInspectorProps) => {
         maxFontSize={24} sizeLabel="Размер текста, px" onChange={({ color, ...patch }) =>
           update({ ...patch, ...(color === undefined ? {} : { textColor: color }) })} />
       <TableAlignmentControls element={element} pageId={pageId} />
-      <InspectorSection title="Текст и ячейки" summary={`${style.fontSize} px`} defaultOpen>
+      <InspectorSection title="Текст и ячейки" icon={<Settings2 size={16} aria-hidden="true" />} summary={`${style.fontSize} px`} defaultOpen>
         <div className="table-settings-grid">
           <label>Высота выбранных строк, px<input type="number" min={24} max={96} value={rowHeights.every((height) => height === rowHeights[0]) ? rowHeights[0] ?? '' : ''} placeholder="Смешано" onChange={(event) => actions.updateTableSelectionRowHeight(pageId, element.id, readNumber(event.currentTarget.value, rowHeights[0] ?? element.style.rowHeight))} /></label>
           <label>Отступ ячейки, px<input type="number" min={0} max={24} value={style.cellPadding} onChange={(event) => update({ cellPadding: readNumber(event.currentTarget.value, style.cellPadding) })} /></label>
@@ -55,7 +55,7 @@ export const TableInspector = ({ element, pageId }: TableInspectorProps) => {
         </div>
       </InspectorSection>
 
-      <InspectorSection title="Цвета" summary={style.backgroundColor}>
+      <InspectorSection title="Цвета" icon={<Palette size={16} aria-hidden="true" />} summary={style.backgroundColor}>
         <div className="color-grid">
           <ColorControl label="Фон" value={style.backgroundColor} onChange={(backgroundColor) => update({ backgroundColor })} />
           <ColorControl label="Текст блока" value={element.style.headerTextColor} onChange={(headerTextColor) => actions.updateTableStyle(pageId, element.id, { headerTextColor })} />
@@ -69,7 +69,7 @@ export const TableInspector = ({ element, pageId }: TableInspectorProps) => {
         </div>
       </InspectorSection>
 
-      <InspectorSection title="Границы" summary={style.borderVisible ? `${style.borderWidth} px` : 'Скрыты'}>
+      <InspectorSection title="Границы" icon={<Grid2X2 size={16} aria-hidden="true" />} summary={style.borderVisible ? `${style.borderWidth} px` : 'Скрыты'}>
         <div className="inspector-block">
           <label className="toggle-row"><input type="checkbox" checked={style.borderVisible} onChange={(event) => update({ borderVisible: event.currentTarget.checked })} /><span>Показывать границы</span></label>
           <div className="table-settings-grid">
@@ -84,11 +84,13 @@ export const TableInspector = ({ element, pageId }: TableInspectorProps) => {
         </div>
       </InspectorSection>
 
-      <div className="inspector-actions inspector-actions-stack">
-        <button type="button" disabled={!canDeleteRows} onClick={() => selectedRowIds.forEach((rowId) => actions.deleteTableRow(pageId, element.id, rowId))}>Удалить выбранные строки</button>
-        <button type="button" disabled={!canDeleteColumns} onClick={() => selectedColumnIds.forEach((columnId) => actions.deleteTableColumn(pageId, element.id, columnId))}>Удалить выбранные столбцы</button>
-      </div>
-      <button className="danger-action" type="button" onClick={() => actions.deleteSelected()}><Trash2 size={15} aria-hidden="true" /> Удалить таблицу</button>
+      <InspectorSection title="Действия с таблицей" icon={<Ellipsis size={16} aria-hidden="true" />}>
+        <div className="inspector-actions">
+          <button type="button" disabled={!canDeleteRows} onClick={() => selectedRowIds.forEach((rowId) => actions.deleteTableRow(pageId, element.id, rowId))}>Удалить выбранные строки</button>
+          <button type="button" disabled={!canDeleteColumns} onClick={() => selectedColumnIds.forEach((columnId) => actions.deleteTableColumn(pageId, element.id, columnId))}>Удалить выбранные столбцы</button>
+        </div>
+        <button className="danger-action" type="button" onClick={() => actions.deleteSelected()}><Trash2 size={15} aria-hidden="true" /> Удалить таблицу</button>
+      </InspectorSection>
     </section>
   );
 };

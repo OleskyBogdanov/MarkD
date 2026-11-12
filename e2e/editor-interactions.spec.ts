@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
@@ -127,6 +127,14 @@ test('Ctrl wheel zooms the document while ordinary wheel scrolls and preview als
   await page.mouse.wheel(0, 160);
   await expect.poll(() => canvas.evaluate((node) => node.scrollTop)).toBeGreaterThan(scrollTop);
   await expect(percent).toHaveText(restoredPercent);
+  const beforeBurst = await sheet.evaluate(node => node.getBoundingClientRect().width);
+  await canvas.evaluate(node => {
+    for (let index = 0; index < 4; index++) {
+      node.dispatchEvent(new WheelEvent('wheel', { bubbles: true, ctrlKey: true, deltaY: -10, cancelable: true }));
+    }
+  });
+  await expect.poll(() => sheet.evaluate(node => node.getBoundingClientRect().width))
+    .toBeCloseTo(beforeBurst * Math.exp(0.08), 1);
   await page.getByRole('button', { name: 'Открыть предпросмотр', exact: true }).click();
   const previewWidth = await sheet.evaluate((node) => node.getBoundingClientRect().width);
   await canvas.hover({ position: { x: 100, y: 100 } });
@@ -150,4 +158,60 @@ test('explains the preview button on hover and keyboard focus', async () => {
   await expect(hint).toHaveCount(0);
   await preview.focus();
   await expect(hint).toBeVisible();
+});
+
+test('table tools remain reachable without horizontal scrolling in a narrow window', async () => {
+  await page.getByTestId('table-element').first().locator('.document-table-header').click();
+  const toolbar = page.getByRole('region', { name: 'Панель инструментов элемента' });
+  for (const width of [1440, 1024, 700, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect.poll(() => toolbar.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(0);
+    for (const name of ['Текст и ячейки', 'Цвета', 'Границы', 'Действия с таблицей']) {
+      const control = toolbar.getByRole('button', { name, exact: true });
+      await expect(control).toBeInViewport();
+      await control.focus();
+      await control.press('Enter');
+      await expect(control).toHaveAttribute('aria-expanded', 'true');
+      await page.keyboard.press('Escape');
+      await expect(control).toBeFocused();
+    }
+  }
+});
+
+test('structure reveals the selected element on the same page and on another page', async () => {
+  await page.setViewportSize({ width: 1440, height: 700 });
+  await page.getByRole('button', { name: /^Сохранить(?: ·)?$/ }).click();
+  await expect.poll(() => existsSync(filePath)).toBe(true);
+  const fixture = projectSchema.parse(JSON.parse(readFileSync(filePath, 'utf8')));
+  const source = fixture.pages[0];
+  const text = source.elements.find(element => element.type === 'text');
+  const table = source.elements.find(element => element.type === 'table');
+  if (!text || !table) throw new Error('The initial project must include text and a table.');
+  text.text = 'Верхний текст';
+  text.rect.y = 20;
+  const bottomText = { ...text, id: 'bottom-text', text: 'Нижний текст', rect: { ...text.rect, y: 250 } };
+  source.elements = [text, bottomText];
+  table.pageHeader = 'Нижняя таблица';
+  table.rect.y = 220;
+  fixture.pages.push({ ...source, id: 'second-page', elements: [table] });
+  writeFileSync(filePath, JSON.stringify(fixture));
+  await app.evaluate(({ dialog }, path) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
+  }, filePath);
+  await page.getByRole('button', { name: 'Файл', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Открыть', exact: true }).click();
+  await expect(page.getByTestId('editor-page')).toHaveCount(2);
+  await page.getByRole('button', { name: /^Раскрыть / }).first().click();
+  const canvas = page.getByRole('region', { name: 'Рабочая область документа' });
+  for (const name of ['Текст: Нижний текст', 'Текст: Верхний текст', 'Таблица: Нижняя таблица', 'Таблица: Нижняя таблица']) {
+    await canvas.evaluate(node => { node.scrollTop = 0; });
+    await page.getByRole('button', { name, exact: true }).click();
+    await expect(async () => {
+      const selected = page.locator('.canvas-element.selected').first();
+      const [elementBox, canvasBox] = await Promise.all([selected.boundingBox(), canvas.boundingBox()]);
+      if (!elementBox || !canvasBox) throw new Error('The selected element and canvas must exist.');
+      expect(elementBox.y).toBeGreaterThanOrEqual(canvasBox.y);
+      expect(elementBox.y + elementBox.height).toBeLessThanOrEqual(canvasBox.y + canvasBox.height);
+    }).toPass();
+  }
 });

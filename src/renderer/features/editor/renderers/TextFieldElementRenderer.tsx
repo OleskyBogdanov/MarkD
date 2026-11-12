@@ -41,9 +41,8 @@ export const TextFieldElementRenderer = ({
 }: TextFieldElementRendererProps) => {
   const Icon = element.iconName ? DOCUMENT_ICON_REGISTRY[element.iconName] : null;
   const inputId = `canvas-${element.id}`;
-  const autoSize = useAutoSizeTextarea();
   const fieldRef = useRef<HTMLDivElement>(null);
-  const hasOverflow = useTextOverflow(fieldRef, mode === 'edit');
+  const hasOverflow = useTextOverflow(fieldRef, mode === 'edit', element, rect);
   const style = {
     '--field-font-family': fontFamilyForId(element.style.fontId),
     '--field-font-size': `${element.style.fontSize * zoom}px`,
@@ -56,6 +55,7 @@ export const TextFieldElementRenderer = ({
     '--field-radius': `${element.style.borderRadius * zoom}px`
   } as React.CSSProperties;
   const visiblePlaceholder = element.showPlaceholder ? element.placeholder : '';
+  const autoSize = useAutoSizeTextarea(element.value, JSON.stringify([style, visiblePlaceholder, mode]));
   const preventPlainEnter = (event: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) event.preventDefault();
   };

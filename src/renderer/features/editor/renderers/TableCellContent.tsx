@@ -19,7 +19,7 @@ type Props = {
 };
 
 export const TableCellContent = ({ ariaLabel, mode, style, value, verticalAlign, onChange, onFocus, onSelect, onMove, onStop }: Props) => {
-  const autoSize = useAutoSizeTextarea();
+  const autoSize = useAutoSizeTextarea(value, JSON.stringify([style, mode]));
   const [editing, setEditing] = useState(false);
   return (
     <div className="table-cell-content" style={{ justifyContent: verticalContentAlign[verticalAlign] }}>

@@ -1274,7 +1274,7 @@ test('keeps toolbar popovers and document structure independently scrollable', a
 
   await window.setViewportSize({ width: 700, height: 560 });
   await expect(structure).toBeHidden();
-  await expect(toolbar).toHaveCSS('overflow-x', 'auto');
+  await expect(toolbar).toHaveCSS('overflow-x', 'visible');
   await window.getByRole('button', { name: 'Структура', exact: true }).click();
   await expect(structure).toBeVisible();
   const narrowLayersScroll = await layersPane.evaluate((node) => {
@@ -1287,8 +1287,8 @@ test('keeps toolbar popovers and document structure independently scrollable', a
     node.scrollLeft = 120;
     return { left: node.scrollLeft, width: node.scrollWidth, viewport: node.clientWidth };
   });
-  expect(toolbarScroll.width).toBeGreaterThan(toolbarScroll.viewport);
-  expect(toolbarScroll.left).toBeGreaterThan(0);
+  expect(toolbarScroll.width).toBeLessThanOrEqual(toolbarScroll.viewport);
+  expect(toolbarScroll.left).toBe(0);
   expect(await layersPane.evaluate((node) => node.scrollTop)).toBe(narrowLayersScroll);
   expect(await canvasPane.evaluate((node) => node.scrollTop)).toBe(canvasScroll);
   await expect.poll(() => window.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);

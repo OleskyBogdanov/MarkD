@@ -148,16 +148,27 @@ export const EditorWorkspace = ({
   useEffect(() => {
     const shell = shellRef.current;
     if (!shell || renderMode === 'print') return;
+    let frame: number | undefined;
+    let pendingZoom: number | undefined;
     const onWheel = (event: WheelEvent): void => {
       if (!event.ctrlKey || event.deltaY === 0) return;
       event.preventDefault();
       const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16
         : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? shell.clientHeight : 1;
-      const current = useEditorStore.getState().zoom;
-      onZoomChange(Math.max(0.25, Math.min(2, current * Math.exp(-event.deltaY * unit * 0.002))));
+      const current = pendingZoom ?? useEditorStore.getState().zoom;
+      pendingZoom = Math.max(0.25, Math.min(2, current * Math.exp(-event.deltaY * unit * 0.002)));
+      if (frame !== undefined) return;
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        if (pendingZoom !== undefined) onZoomChange(pendingZoom);
+        pendingZoom = undefined;
+      });
     };
     shell.addEventListener('wheel', onWheel, { passive: false });
-    return () => shell.removeEventListener('wheel', onWheel);
+    return () => {
+      shell.removeEventListener('wheel', onWheel);
+      if (frame !== undefined) cancelAnimationFrame(frame);
+    };
   }, [onZoomChange, renderMode]);
   const fit = (whole: boolean): void => {
     const canvas = canvasRef.current;

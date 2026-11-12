@@ -36,6 +36,7 @@ test.beforeEach(async () => {
   await table.getByRole('button', { name: 'Добавить строку таблицы', exact: true }).click();
   await table.getByRole('button', { name: 'Добавить строку таблицы', exact: true }).click();
   await expect(table.locator('tr')).toHaveCount(3);
+  await table.scrollIntoViewIfNeeded();
 });
 
 test.afterEach(async () => {
@@ -179,13 +180,16 @@ test('keeps row and column deletion available in the toolbar and preserves the l
   const toolbar = window.getByRole('region', { name: 'Панель инструментов элемента' });
   await drag(table.getByRole('button', { name: 'Выбрать строку 2', exact: true }),
     table.getByRole('button', { name: 'Выбрать строку 3', exact: true }));
+  await toolbar.getByRole('button', { name: 'Действия с таблицей', exact: true }).click();
   await toolbar.getByRole('button', { name: 'Удалить выбранные строки', exact: true }).click();
   await expect(table.locator('tr')).toHaveCount(1);
   await drag(table.getByRole('button', { name: 'Выбрать столбец 2', exact: true }),
     table.getByRole('button', { name: 'Выбрать столбец 3', exact: true }));
+  await toolbar.getByRole('button', { name: 'Действия с таблицей', exact: true }).click();
   await toolbar.getByRole('button', { name: 'Удалить выбранные столбцы', exact: true }).click();
   await expect(table.locator('th, td')).toHaveCount(1);
   await table.locator('.document-table-header').click();
+  await toolbar.getByRole('button', { name: 'Действия с таблицей', exact: true }).click();
   await expect(toolbar.getByRole('button', { name: 'Удалить выбранные строки', exact: true })).toBeDisabled();
   await expect(toolbar.getByRole('button', { name: 'Удалить выбранные столбцы', exact: true })).toBeDisabled();
   expect(errors).toEqual([]);
@@ -288,12 +292,16 @@ test('selects the intended rows with pointer targets at minimum zoom', async () 
 
 test('warns about the painted uppercase table heading and clears the warning when it fits', async () => {
   const table = window.getByTestId('table-element').first();
-  const handle = await table.getByRole('button', { name: 'Изменить размер таблицы', exact: true }).boundingBox();
+  const resize = table.getByRole('button', { name: 'Изменить размер таблицы', exact: true });
+  await resize.scrollIntoViewIfNeeded();
+  const widthBefore = await table.evaluate(node => node.getBoundingClientRect().width);
+  const handle = await resize.boundingBox();
   if (!handle) throw new Error('Table resize handle is not visible');
   await window.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
   await window.mouse.down();
   await window.mouse.move(handle.x + handle.width / 2 - 350, handle.y + handle.height / 2, { steps: 12 });
   await window.mouse.up();
+  await expect.poll(() => table.evaluate(node => node.getBoundingClientRect().width)).toBeLessThan(widthBefore - 300);
   await expect(table.locator('.overflow-warning')).toHaveCount(0);
   const heading = table.getByRole('textbox', { name: 'Заголовок блока', exact: true });
   await heading.dblclick();
