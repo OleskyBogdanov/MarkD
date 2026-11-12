@@ -1,9 +1,10 @@
 /* global process, console */
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { promisify } from 'node:util';
 if (process.platform !== 'win32') throw new Error('Windows smoke must run on Windows');
 const profile = await mkdtemp(join(tmpdir(), 'markd-win-smoke-'));
 const executable = process.env.MARKD_SMOKE_EXE || join(process.cwd(), 'dist-package', 'win-unpacked', 'MarkD.exe');
@@ -27,6 +28,10 @@ try {
   if (!ready) throw new Error('Renderer did not become ready');
   console.log('Windows packaged renderer is ready without logged errors');
 } finally {
-  if (child.pid && child.exitCode === null) { child.kill(); await exited; }
+  if (child.pid && child.exitCode === null) {
+    // Electron utility processes can retain profile files after the main exits.
+    await promisify(execFile)('taskkill', ['/pid', String(child.pid), '/t', '/f']);
+    await exited;
+  }
   await rm(profile, { recursive: true, force: true });
 }
