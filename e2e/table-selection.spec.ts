@@ -265,9 +265,20 @@ test('supports keyboard range extension, whole-table selection and direct cell e
 
 test('selects the intended rows with pointer targets at minimum zoom', async () => {
   const table = window.getByTestId('table-element').first();
+  const toolbar = window.getByRole('region', { name: 'Панель инструментов элемента' });
+  await toolbar.getByRole('button', { name: 'Границы', exact: true }).click();
+  await toolbar.getByRole('spinbutton', { name: 'Толщина, px', exact: true }).fill('4');
+  await window.keyboard.press('Escape');
   await window.getByRole('region', { name: 'Рабочая область документа' })
     .dispatchEvent('wheel', { ctrlKey: true, deltaY: 10000, cancelable: true });
   await expect(window.getByLabel('Текущий масштаб', { exact: true })).toHaveText('25%');
+  for (const [index, id] of ['table-header-row-resize', 'table-row-resize-2', 'table-row-resize-3'].entries()) {
+    await expect.poll(async () => {
+      const [handle, row] = await Promise.all([table.getByTestId(id).boundingBox(), table.locator('tr').nth(index).boundingBox()]);
+      if (!handle || !row) throw new Error('Row resize handle and rendered row must be visible');
+      return handle.y + handle.height / 2 - row.y - row.height;
+    }).toBeCloseTo(0, 1);
+  }
   await table.getByRole('button', { name: 'Выбрать строку 1', exact: true }).click();
   await expect(table.locator('thead [data-cell-selected="true"]')).toHaveCount(3);
   await expect(table.locator('tbody [data-cell-selected="true"]')).toHaveCount(0);

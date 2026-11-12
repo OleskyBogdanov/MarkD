@@ -1,4 +1,4 @@
-import { useRef, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import { Columns3, Plus, Rows3 } from 'lucide-react';
 import './table-element.css';
 import { calculateTableRowHeightPx, clamp, type KpRect, type KpTableElement, type RenderMode } from '@/renderer/domain/model';
@@ -42,6 +42,25 @@ export const TableElementRenderer = ({
   sourceTable, tableRange, tableCell, onRangeSelect
 }: TableElementRendererProps) => {
   const contentRef = useRef<HTMLDivElement>(null);
+  const [rowBounds, setRowBounds] = useState<readonly { readonly top: number; readonly height: number }[]>([]);
+  useLayoutEffect(() => {
+    const container = contentRef.current;
+    if (mode !== 'edit' || !container) return;
+    // Collapsed borders round to device pixels, so model heights alone do not
+    // locate the rendered row edges at fractional document zoom.
+    const observer = new ResizeObserver(() => {
+      const top = container.getBoundingClientRect().top;
+      const effectiveZoom = container.currentCSSZoom;
+      const bounds = Array.from(container.querySelectorAll('tr'), (row) => {
+        const box = row.getBoundingClientRect();
+        return { top: (box.top - top) / effectiveZoom, height: box.height / effectiveZoom };
+      });
+      setRowBounds((current) => current.length === bounds.length &&
+        current.every((row, index) => row.top === bounds[index].top && row.height === bounds[index].height) ? current : bounds);
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [element, mode]);
   const hasOverflow = useTextOverflow(contentRef, mode === 'edit', element, rect);
   const { selectionButton, selectionKeyDown, startSelection, moveSelection, stopSelection } = useTableSelectionControls({
     element, sourceTable, contentRef, tableRange, tableCell, onRangeSelect, onSelect
@@ -63,10 +82,6 @@ export const TableElementRenderer = ({
     '--table-border-width': `${(element.style.borderVisible ? element.style.borderWidth : 0) * zoom}px`,
     '--table-border-style': element.style.borderStyle
   } as CSSProperties;
-  const rowTops = renderedRowHeights.reduce<number[]>((tops, height, index) => {
-    tops.push((tops[index] ?? 0) + height);
-    return tops;
-  }, [0]);
   let cumulativeColumnWidth = 0;
   const columnBoundaries = columnWidths.slice(0, -1).map((width) => {
     cumulativeColumnWidth += width;
@@ -90,13 +105,13 @@ export const TableElementRenderer = ({
             value={leftWidth} onChange={(widthMm) => onColumnResize(element.columns[index], widthMm)} />
         );
       })}
-      {element.rows.map((row, index) => (
+      {element.rows.map((row, index) => rowBounds[index] ? (
         <TableResizeHandle key={row.id}
           ariaLabel={element.firstRowHeader && index === 0 ? 'Изменить высоту шапки таблицы' : `Изменить высоту строки ${index + 1}`}
           className="table-row-resize-handle" max={96} min={24} orientation="horizontal" pixelsPerUnit={zoom}
-          style={{ top: `${(titleHeight + rowTops[index + 1]) * zoom}px` }} testId={element.firstRowHeader && index === 0 ? 'table-header-row-resize' : `table-row-resize-${index + 1}`}
+          style={{ top: `${rowBounds[index].top + rowBounds[index].height}px` }} testId={element.firstRowHeader && index === 0 ? 'table-header-row-resize' : `table-row-resize-${index + 1}`}
           value={storedRowHeights[index]} onChange={(heightPx) => onRowResize(row.id, heightPx)} />
-      ))}
+      ) : null)}
     </div>
     </>
   ) : null;
@@ -150,9 +165,9 @@ export const TableElementRenderer = ({
           left: `${columnWidths.slice(0, index).reduce((sum, width) => sum + width, 0) / totalColumnWidth * 100}%`,
           width: `${(columnWidths[index] ?? 1) / totalColumnWidth * 100}%`
         }))}
-        {element.rows.map((row, index) => selectionButton('rows', { rowId: row.id, columnId: element.columns[0] }, `Выбрать строку ${sourceTable.rows.findIndex((candidate) => candidate.id === row.id) + 1}`, {
-          top: `${(titleHeight + rowTops[index]) * zoom}px`, height: `${renderedRowHeights[index] * zoom}px`
-        }))}
+        {element.rows.map((row, index) => rowBounds[index] ? selectionButton('rows', { rowId: row.id, columnId: element.columns[0] }, `Выбрать строку ${sourceTable.rows.findIndex((candidate) => candidate.id === row.id) + 1}`, {
+          top: `${rowBounds[index].top}px`, height: `${rowBounds[index].height}px`
+        }) : null)}
       </div> : null}
       <div ref={contentRef}>
         {element.showPageHeader ? <div className="document-table-header"
