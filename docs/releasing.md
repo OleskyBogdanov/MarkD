@@ -1,67 +1,121 @@
-# Выпуск и обновления MarkD через GitHub Releases
+# Выпуск и обновления MarkD
 
-## Как работает обновление
+## Канал и согласие
 
-Источник — публичные [GitHub Releases OleskyBogdanov/MarkD](https://github.com/OleskyBogdanov/MarkD/releases). Отдельный HTTPS-сервер, домен и `MARKD_UPDATE_URL` больше не нужны. Адрес репозитория задаётся в `package.json → repository.url` и фиксируется внутри release-пакета. Клиент использует штатный GitHub provider electron-updater 6.8.9, HTTPS и проверку checksum/подписи. Токен GitHub на компьютере пользователя не требуется и в приложение не включается.
+Источник — публичный GitHub Releases `OleskyBogdanov/MarkD`,
+`package.json → repository.url`. Сервер и `MARKD_UPDATE_URL` не нужны;
+токены/ключи в клиент не встраиваются, renderer источник не меняет.
+Локальные версии: builder 26.15.3, updater 6.8.9;
+[миграция v27](plans/electron-builder-v27-migration.md) — отдельный gate.
 
-Проверка выполняется через 15 секунд после запуска release-пакета, затем каждые 6 часов либо вручную. Скачивание начинается по кнопке; установка — после отдельного действия и проверки несохранённого документа. `autoDownload=false`, `autoInstallOnAppQuit=false`, downgrade и prerelease отключены. Черновики GitHub Releases клиент не видит. Release notes отображаются как текст.
+Только `package:release` добавляет `markd-release.json`: канал включён,
+но маркер не заменяет подпись. Dev/E2E/обычные пакеты feed не проверяют.
+Проверка: через 15 секунд, каждые 6 часов, вручную.
+`autoDownload=false`, `autoInstallOnAppQuit=false`: скачивание и установка
+по отдельным действиям. Downgrade/prerelease выключены; draft невидим,
+notes — текст. Ошибка сети не блокирует работу, запросы объединяются.
 
-Dev, E2E и обычные локальные пакеты не проверяют обновления: только `package:release` добавляет `markd-release.json`. Renderer не может менять источник. Этот файл не заменяет криптографическую подпись приложения.
+До установки: flush, включая IME, «Сохранить / Не сохранять / Отмена».
+Cancel/отмена Save As/ошибка записи блокируют установку. Save подтверждает
+свою сессию/ревизию; новые правки остаются dirty. Ошибка установки возвращает
+рабочий режим; «Позже» сохраняет работу.
 
-## Обычный выпуск для ручной установки
+## Обычные пакеты
 
-Если сертификаты издателей ещё не настроены, workflow **Verify desktop** собирает обычные пакеты после typecheck, lint, unit и Electron E2E. На macOS проверяются ad-hoc подпись и запуск `.app`, затем создаются `MarkD-X.Y.Z-arm64.zip` и `MarkD-X.Y.Z-x64.zip`. На Windows устанавливается NSIS и проверяется запуск установленного приложения; файл — `MarkD-Setup-X.Y.Z-x64.exe`. Готовые файлы сохраняются в артефактах `installers-macos-15`, `installers-macos-15-intel` и `installers-windows-2022`.
+**Verify desktop** после typecheck, lint, unit и Electron E2E создаёт
+пакеты ручной установки без настроенных сертификатов:
 
-Для такого выпуска поднимите версию в `package.json` и lockfile, обновите README, отправьте проверенные изменения в `main` и дождитесь успеха всех трёх jobs на точном коммите. Скачайте артефакты этого запуска и приложите весь набор к новому GitHub release с большим номером версии. Не публикуйте пустой релиз и не заменяйте файлы существующего выпуска.
+| Платформа | Файл | Артефакт Actions |
+| --- | --- | --- |
+| macOS ARM64 | `MarkD-X.Y.Z-arm64.zip` | `installers-macos-15` |
+| macOS Intel x64 | `MarkD-X.Y.Z-x64.zip` | `installers-macos-15-intel` |
+| Windows x64 | `MarkD-Setup-X.Y.Z-x64.exe` | `installers-windows-2022` |
 
-В описании укажите отсутствие Developer ID/notarization и подписи Windows, ручную установку и отсутствие автообновления. Не добавляйте metadata `latest*.yml` из обычных сборок: это не подписанный канал обновлений. Для включения канала используйте отдельный подписанный workflow ниже; его проверки сертификатов остаются обязательными.
+Mac: ad-hoc подпись, fuses, запуск `.app`; Windows: установка NSIS/запуск.
+Каталоги Mac: x64 `mac/`, ARM64 `mac-arm64/`.
+Обновите версию/lockfile/описание, отправьте в main, дождитесь трёх jobs
+на точном коммите. Полный набор этого запуска приложите к новому релизу
+с большим номером, указав ручную установку, отсутствие Developer ID/
+notarization, Windows signing и автообновления. `latest*.yml` обычных сборок
+не публикуются как канал; пустые релизы и замена вложений запрещены.
 
-## Подготовка один раз
+## Сертификаты и права
 
-В GitHub environment `release` задайте переменные:
+GitHub environment `release`:
 
-| Имя | Значение |
+| Переменная | Значение |
 | --- | --- |
-| `MARKD_MAC_IDENTITY` | Полное имя Developer ID Application identity; `-` запрещено |
-| `MARKD_WINDOWS_PUBLISHER` | Издатель, точно совпадающий с сертификатом Windows |
+| `MARKD_MAC_IDENTITY` | Полное Developer ID Application identity; `-` запрещено |
+| `MARKD_WINDOWS_PUBLISHER` | Издатель точно по сертификату Windows |
 
-Secrets: `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`, `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`. При локальной сборке macOS используются `CSC_LINK` и `CSC_KEY_PASSWORD`. Секреты не хранить в проекте.
+Secrets: `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`, `APPLE_ID`,
+`APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`, `WIN_CSC_LINK`,
+`WIN_CSC_KEY_PASSWORD`. Локально для Mac — `CSC_LINK`, `CSC_KEY_PASSWORD`.
+Секреты не хранятся в проекте.
 
-`npm run package:release` включает `forceCodeSigning`; macOS — hardened runtime, notarization, DMG + ZIP; Windows — NSIS и проверку издателя. Скрипт прекращает работу при отсутствии настроек. Ad-hoc переподпись в production-пути не выполняется. Для аппаратного ключа/Trusted Signing Windows потребуется отдельная настройка подписания.
+`npm run package:release`: `forceCodeSigning`, отказ без настроек.
+Mac: Developer ID, hardened runtime, notarization, DMG + ZIP;
+Windows: NSIS/проверка издателя. Production не переподписывается ad-hoc.
+Аппаратный ключ/Trusted Signing Windows настраиваются отдельно.
 
-Публикация использует краткоживущий `github.token` в отдельном job с `contents: write`. Для сборок достаточно `contents: read`; токен публикации не передаётся упаковщику и не записывается в приложение. Репозиторий должен оставаться публичным. Для закрытого исходного кода можно выделить отдельный публичный репозиторий раздачи, но текущий workflow намеренно требует совпадения `repository.url` с репозиторием запуска.
+Сборки: `contents: read`; отдельный publish job: `contents: write`,
+краткоживущий `github.token`, недоступный упаковщику. Репозиторий публичный;
+workflow требует совпадения `repository.url` с репозиторием запуска.
 
-## Файлы одного релиза
+## Файлы подписанного релиза
 
-Builder 26.15.3 создаёт артефакты всех платформ для одного стабильного тега `vX.Y.Z`:
+Все архитектуры входят в один стабильный тег `vX.Y.Z`:
 
-| Клиент | Канал provider | Metadata | Файлы версии |
+| Клиент | Канал | Metadata | Пакеты |
 | --- | --- | --- | --- |
-| macOS Apple Silicon | `latest-arm64` | `latest-arm64-mac.yml` | `MarkD-X.Y.Z-arm64.dmg`, `.zip` |
-| macOS Intel | `latest-x64` | `latest-x64-mac.yml` | `MarkD-X.Y.Z-x64.dmg`, `.zip` |
+| macOS ARM64 | `latest-arm64` | `latest-arm64-mac.yml` | `MarkD-X.Y.Z-arm64.dmg`, `MarkD-X.Y.Z-arm64.zip` |
+| macOS Intel x64 | `latest-x64` | `latest-x64-mac.yml` | `MarkD-X.Y.Z-x64.dmg`, `MarkD-X.Y.Z-x64.zip` |
 | Windows x64 | `latest` | `latest.yml` | `MarkD-Setup-X.Y.Z-x64.exe` |
 
-Также загружаются созданные builder blockmaps. Раздельные каналы macOS исключают перезапись `latest-mac.yml` параллельными jobs. Это стабильные каналы архитектур, а не prerelease-каналы. Runtime проверяет соответствие канала архитектуре установленного приложения. `app-update.yml` создаёт builder; вручную его не редактировать. Metadata создаются и при `--publish never` в закреплённом builder 26.15.3; сетевую публикацию выполняет следующий job.
+Включаются blockmaps. Раздельные стабильные Mac-каналы исключают перезапись;
+runtime сверяет архитектуру. Builder создаёт `app-update.yml`/metadata
+при `--publish never`, ручной правки нет. ZIP — updater, DMG — установка.
 
-## Выпуск новой версии
+## Порядок публикации
 
-1. Поднять стабильную версию: `npm version X.Y.Z --no-git-tag-version --ignore-scripts`. Опубликовать изменения `package.json` и lockfile. Использовать номер больше последнего опубликованного; существующие теги не перезаписываются.
-2. После добавления workflow в основную ветку запустить **Build signed GitHub release draft** через Actions → Run workflow на нужном ref. Предварительно создавать тег не нужно. Preflight проверяет публичность репозитория, стабильную версию и отсутствие уже занятого тега.
-3. Jobs macOS arm64/Intel и Windows x64 выполняют typecheck, lint, unit, Electron E2E, подписывают и собирают пакеты. Проверяется запуск `.app`; Windows дополнительно устанавливает NSIS и запускает установленный `.exe`.
-4. Только после успеха всех jobs финальный job собирает полный набор файлов и создаёт **Draft** `vX.Y.Z` на точном commit запуска. При отсутствии обязательного установщика или metadata он прекращает работу. Повторный запуск не заменяет опубликованную версию; `--clobber` не используется.
-5. Скачать кандидаты, проверить сертификаты/notarization и установку. Проверку N → N+1 и отрицательных сценариев провести на тестовом публичном репозитории с двумя подписанными выпусками и клиентом, собранным для этого источника: production-клиент не читает draft/prerelease.
-6. В GitHub Releases проверить все вложения, описание и тег, затем **Publish release** как обычный стабильный **Latest**. После этого клиенты увидят версию. Не публиковать пустой релиз заранее. Не редактировать бинарники уже опубликованного релиза; исправления выпускать с большим номером.
+1. `npm version X.Y.Z --no-git-tag-version --ignore-scripts`; отправьте
+   версию/lockfile. Номер выше опубликованного.
+2. Actions → **Build signed GitHub release draft**, нужный ref, без
+   предварительного тега. Preflight: публичность, stable version, свободный тег.
+3. Три jobs: typecheck/lint/unit/Electron E2E, подпись, упаковка, smoke;
+   Windows — установленный NSIS.
+4. После успеха всех jobs создаётся полный **Draft** `vX.Y.Z` на точном
+   commit запуска. Нет пакета/metadata — отказ. `--clobber` не используется.
+5. Проверьте сертификаты/notarization/установку. N → N+1: тестовый публичный
+   репозиторий, два подписанных stable выпуска, клиент для этого источника.
+   Production не читает draft/prerelease.
+6. Сверьте тег/описание/вложения, **Publish release** как стабильный
+   **Latest**. Теперь обновление доступно клиентам.
 
-Матрица обновлений: обе архитектуры Mac и Windows x64; сохранность проектов/профиля, Save/Cancel/ошибка Save, отсутствие сети, обрыв загрузки, неверные checksum/подпись, права/UAC, старые `.markd`/`.kpdoc`. Успешная сборка и mock-тесты не заменяют реальную установку N → N+1.
+Пакеты опубликованной версии неизменяемы; исправления — большим semver.
+Старые пакеты/blockmaps сохраняются для поддерживаемых переходов;
+если differential download невозможен, допустим полный пакет.
+Сохраните `appId=com.markd.desktop`, имя, профиль и правила установки.
+Старому клиенту без updater нужна одна ручная переходная установка;
+переход с unsigned пакета проверяется отдельно.
 
-Старый MarkD 0.4.0 без обновлятора требует **одну ручную установку** переходной версии. После настройки подписанного выпуска последующие версии загружаются из приложения. Сохранить `appId=com.markd.desktop`, имя приложения и профиль; отдельно проверить переход с старого unsigned пакета.
+## Неподтверждённые внешние ворота
 
-## Подтверждённое и оставшиеся проверки
+Обычные пакеты трёх архитектур/установленный NSIS проверялись в CI.
+Локальные HTTP-тесты provider подтверждают выбор файлов/отсутствие токена;
+проверка схемы builder не доказывает подпись.
+Developer ID/notarization, Windows signing и реальный N → N+1 двух
+подписанных установок остаются внешними воротами. Windows Server 2022
+в CI не заменяет приёмку Windows 10/11.
 
-Обычные пакеты macOS arm64/Intel и установленный NSIS Windows x64 проверены в CI. Тесты GitHub-интеграции используют настоящий provider закреплённого updater 6.8.9 с локальными HTTP-ответами: проверяют выбор файлов всех трёх платформ и отсутствие авторизации. Конфигурации подписанной сборки проверяются схемой установленного builder 26.15.3. Это не подтверждает криптографическую подпись или установку обновления.
+На обеих архитектурах Mac и Windows x64 проверьте проекты/профиль,
+Save/Cancel/ошибку Save, отмену пути, сеть/404/битую metadata, обрыв загрузки,
+неверные checksum/подпись, место на диске, права/UAC, «Позже», повторные
+запросы, старые `.markd`/`.kpdoc`, PDF, ассоциации файлов и переходную
+установку. Отозванный релиз/кеш не должен приводить к установке
+непредусмотренной версии. Mock-тесты и build не заменяют эту матрицу.
 
-Developer ID/notarization, Windows signing и N → N+1 двух подписанных установок ещё требуют реального прогона после настройки сертификатов. Windows CI использует Server 2022; приёмка на пользовательских Windows 10/11 остаётся частью выпуска. История опубликованных версий доступна в GitHub Releases.
-
-При принудительном завершении процесса/сеанса ОС восстановление ограничено последним recovery-снимком. При полностью зависшем renderer через 30 секунд нативный диалог предлагает отменить закрытие либо закрыть с предупреждением о возможной потере последних правок.
-
-Источники: [GitHub provider updater 6.8.9](https://github.com/electron-userland/electron-builder/blob/electron-updater%406.8.9/packages/electron-updater/src/providers/GitHubProvider.ts), [GitHub publish configuration](https://www.electron.build/publish.html), [Electron code signing](https://www.electronjs.org/docs/latest/tutorial/code-signing), [gh release create](https://cli.github.com/manual/gh_release_create).
+Принудительное завершение ограничивает восстановление последним recovery.
+При зависшем renderer через 30 секунд нативный диалог предлагает отмену
+закрытия либо закрытие с предупреждением о потере последних правок.
+Историческое наблюдение о `CLOSE_ACK` — в [проектных заметках](project-notes.md).
